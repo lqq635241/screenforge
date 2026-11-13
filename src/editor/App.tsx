@@ -18,8 +18,6 @@ import { ALL_MATERIALS } from '../core/materials'
 import type { ComponentItem, ScreenSchema } from '../core/schema'
 import { clone, findComp, uid } from './utils/misc'
 import { saltConfetti } from './utils/confetti'
-import { exportHtmlFile } from '../export/exportHtml'
-import { exportProject } from '../export/project'
 import Topbar from './components/Topbar'
 import Palette from './components/Palette'
 import CanvasStage from './components/CanvasStage'
@@ -195,13 +193,17 @@ export default function App() {
     commit()
   }
 
-  /* ---- 导出 ---- */
-  const doExportHtml = () => {
+  /* ---- 导出（动态 import：导出模块含 1MB runtime 字符串与 jszip，
+         静态引入会把它们全部打进首屏 bundle，首开白白多下载 ~1.8MB） ---- */
+  const doExportHtml = async () => {
+    toast('正在导出…')
+    const { exportHtmlFile } = await import('../export/exportHtml')
     exportHtmlFile(schemaRef.current, THEMES)
     toast('已导出 screen.html · 双击即可打开')
   }
   const doExportProject = async (kind: 'vue' | 'react') => {
     toast(`正在生成 ${kind === 'vue' ? 'Vue' : 'React'} 工程…`)
+    const { exportProject } = await import('../export/project')
     await exportProject(kind, schemaRef.current, THEMES)
     toast(`已导出 screen-${kind}.zip · 解压后 npm install && npm run dev`)
   }
