@@ -1,0 +1,1742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>ScreenForge · 大屏搭建器原型</title>
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; }
+body {
+  background: #080C13; color: #E6ECF5;
+  font: 400 13px/1.5 system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; cursor: pointer; }
+#topbar {
+  height: 52px; display: flex; align-items: center; gap: 14px; padding: 0 16px;
+  background: #0D131D; border-bottom: 1px solid #1C2534; position: relative; z-index: 30;
+}
+.brand { display: flex; align-items: center; gap: 9px; font-weight: 500; letter-spacing: .3px; }
+.brand .dot { width: 16px; height: 16px; border-radius: 3px; background: #4C8DFF; position: relative; box-shadow: 0 0 12px rgba(76,141,255,.65); }
+.brand .dot::after { content: ""; position: absolute; inset: 4px 4px auto 4px; height: 3px; background: #0D131D; }
+.brand small { color: #7F8DA5; font-weight: 400; font-size: 11px; letter-spacing: .5px; }
+.spacer { flex: 1; }
+.badge {
+  font-size: 11px; color: #8A99B0; border: 1px solid #1E2735; background: #111826;
+  padding: 4px 9px; border-radius: 4px; letter-spacing: .4px;
+}
+.tb-btn {
+  height: 30px; padding: 0 13px; border-radius: 5px; border: 1px solid #243046;
+  background: #131B28; color: #C8D4E6; font-size: 12px;
+}
+.tb-btn:hover { background: #18222F; border-color: #33425C; }
+.tb-btn.primary { background: linear-gradient(180deg, #3D7CF5, #2A64D8); border-color: #2A64D8; color: #fff; box-shadow: 0 2px 10px rgba(47,111,235,.35); }
+.tb-btn.primary:hover { background: #3D7CF5; }
+.theme-swatches { display: flex; gap: 6px; }
+.sw {
+  width: 26px; height: 26px; border-radius: 5px; border: 1px solid #2A364B; cursor: pointer;
+  position: relative; overflow: hidden; padding: 0;
+}
+.sw i { position: absolute; display: block; }
+.sw.active { outline: 2px solid #4C8DFF; outline-offset: 1px; }
+main { display: flex; height: calc(100% - 52px); }
+#palette {
+  width: 218px; flex: 0 0 218px; background: #0B1018; border-right: 1px solid #1C2534;
+  overflow-y: auto; padding: 14px 12px 40px;
+}
+.sec-t {
+  font-size: 11px; color: #6F7E96; letter-spacing: 1.2px; margin: 14px 4px 9px;
+  text-transform: uppercase;
+}
+.sec-t:first-child { margin-top: 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.tile {
+  border: 1px solid #1D2635; background: #101724; border-radius: 6px; padding: 10px 8px 8px;
+  cursor: grab; text-align: center; user-select: none; transition: border-color .15s, background .15s;
+}
+.tile:hover { border-color: #3E66A8; background: #141D2C; box-shadow: 0 0 14px rgba(76,141,255,.22), inset 0 0 8px rgba(76,141,255,.10); transform: translateY(-1px); }
+.tile { transition: border-color .15s, background .15s, box-shadow .15s, transform .15s; }
+.tile:active { cursor: grabbing; }
+.tile svg { display: block; margin: 0 auto 6px; color: #7FA8E8; }
+.tile span { font-size: 11.5px; color: #A9B7CC; }
+#stage { flex: 1; position: relative; overflow: hidden; background:
+  radial-gradient(circle at 1px 1px, #141B27 1px, transparent 0) 0 0 / 22px 22px, #05080F; }
+#wrap { position: absolute; width: 1920px; height: 1080px; transform-origin: 0 0; touch-action: none; box-shadow: 0 0 80px rgba(76,141,255,.10); }
+#screenRoot { position: absolute; inset: 0; overflow: hidden; }
+#overlay { position: absolute; inset: 0; pointer-events: none; }
+#inspector {
+  width: 306px; flex: 0 0 306px; background: #0B1018; border-left: 1px solid #1C2534;
+  overflow-y: auto; padding: 0 0 60px;
+}
+.ins-head {
+  position: sticky; top: 0; z-index: 2; background: #0B1018; border-bottom: 1px solid #1C2534;
+  padding: 12px 14px; display: flex; align-items: center; justify-content: space-between;
+}
+.ins-head b { font-size: 13px; font-weight: 500; color: #DCE6F5; }
+.ins-head em { font-style: normal; font-size: 11px; color: #6F7E96; }
+.grp { padding: 12px 14px; border-bottom: 1px solid #141C28; }
+.grp-t { font-size: 11px; color: #6F7E96; letter-spacing: .8px; margin-bottom: 10px; }
+.row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.row .lb { flex: 0 0 62px; font-size: 12px; color: #8A99B0; }
+.in {
+  flex: 1; min-width: 0; height: 27px; background: #101724; border: 1px solid #1E2735;
+  color: #DCE6F5; border-radius: 4px; padding: 0 8px; font: inherit; font-size: 12px;
+}
+.in:focus { outline: none; border-color: #3F6DB8; }
+.in[type="color"] { padding: 2px; height: 27px; cursor: pointer; }
+textarea.in { height: 108px; padding: 7px 8px; resize: vertical; line-height: 1.55; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 11.5px; }
+select.in { cursor: pointer; }
+.quad { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+.quad .row { margin-bottom: 0; }
+.quad .row .lb { flex: 0 0 18px; }
+.sw-line { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.sw-line span { font-size: 12px; color: #A9B7CC; }
+.switch { position: relative; width: 34px; height: 18px; border-radius: 9px; background: #1E2735; border: 0; padding: 0; transition: background .15s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #7C8CA6; transition: left .15s, background .15s; }
+.switch.on { background: #2F6FEB; }
+.switch.on::after { left: 18px; background: #fff; }
+.mini-btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.mini {
+  height: 26px; padding: 0 9px; border-radius: 4px; border: 1px solid #243046;
+  background: #101724; color: #A9B7CC; font-size: 11.5px;
+}
+.mini:hover { background: #17202E; color: #DCE6F5; border-color: #33425C; }
+.mini.danger:hover { border-color: #6E2C33; color: #FF8391; }
+.seg { display: flex; background: #0E1520; border: 1px solid #1E2735; border-radius: 5px; padding: 2px; margin-bottom: 10px; }
+.seg button { flex: 1; height: 24px; border: 0; background: transparent; color: #8A99B0; font-size: 11.5px; border-radius: 3px; }
+.seg button.on { background: #22344F; color: #DCE6F5; }
+.hint { font-size: 11.5px; color: #64738B; line-height: 1.7; }
+.kbd { display: inline-block; padding: 1px 5px; border: 1px solid #2A364B; border-radius: 3px; background: #111826; font-size: 10.5px; color: #9CABC2; font-family: ui-monospace, monospace; }
+#previewLayer { position: fixed; inset: 0; z-index: 100; background: #000; display: none; }
+#previewLayer.show { display: block; }
+#previewWrap { position: absolute; width: 1920px; height: 1080px; transform-origin: 0 0; }
+#previewRoot { position: absolute; inset: 0; overflow: hidden; }
+#exitPreview {
+  position: absolute; right: 18px; top: 16px; z-index: 5; height: 32px; padding: 0 14px;
+  border-radius: 5px; border: 1px solid rgba(255,255,255,.22); background: rgba(10,14,22,.72);
+  color: #DCE6F5; font-size: 12px; backdrop-filter: blur(4px);
+}
+#modal { position: fixed; inset: 0; z-index: 110; background: rgba(4,7,12,.78); display: none; padding: 40px; }
+#modal.show { display: flex; }
+.modal-box {
+  margin: auto; width: min(920px, 100%); max-height: 100%; background: #0C121C;
+  border: 1px solid #223047; border-radius: 8px; display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid #1A2333; }
+.modal-head b { font-weight: 500; font-size: 13px; }
+.modal-body { overflow: auto; padding: 16px; }
+.modal-body pre {
+  margin: 0; font: 400 12px/1.65 ui-monospace, Menlo, Consolas, monospace;
+  color: #BFD0E6; white-space: pre; overflow: auto;
+}
+#toast {
+  position: fixed; left: 50%; bottom: 42px; transform: translateX(-50%) translateY(12px);
+  background: #16233A; border: 1px solid #2E4767; color: #D7E4F7; padding: 9px 18px;
+  border-radius: 6px; font-size: 12.5px; opacity: 0; pointer-events: none;
+  transition: opacity .2s, transform .2s; z-index: 200;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+@media (max-width: 1320px) {
+  #palette { width: 176px; flex-basis: 176px; padding: 12px 9px 30px; }
+  #inspector { width: 262px; flex-basis: 262px; }
+  .tb-btn { padding: 0 9px; font-size: 11.5px; }
+  .brand small { display: none; }
+}
+@media (max-width: 1080px) {
+  #palette { width: 152px; flex-basis: 152px; }
+  #inspector { width: 236px; flex-basis: 236px; }
+  .grid2 { gap: 6px; }
+  .tile { padding: 8px 5px 6px; }
+}
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <div class="brand">
+    <i class="dot"></i>
+    <span>ScreenForge</span>
+    <small>开放大屏搭建器 · 原型</small>
+  </div>
+  <div class="badge">画布 1920 × 1080 · 16:9</div>
+  <button class="tb-btn" id="btnUndo" title="Ctrl+Z">↶ 撤销</button>
+  <button class="tb-btn" id="btnRedo" title="Ctrl+Shift+Z">↷ 重做</button>
+  <div class="spacer"></div>
+  <div class="theme-swatches" id="themeSwatches"></div>
+  <button class="tb-btn" id="btnPreview">预览</button>
+  <button class="tb-btn" id="btnVue">Vue 代码</button>
+  <button class="tb-btn" id="btnReact">React 代码</button>
+  <button class="tb-btn primary" id="btnExport">导出 HTML</button>
+</header>
+
+<main>
+  <aside id="palette"></aside>
+  <section id="stage">
+    <div id="wrap">
+      <div id="screenRoot"></div>
+      <div id="overlay"></div>
+    </div>
+  </section>
+  <aside id="inspector"></aside>
+</main>
+
+<div id="previewLayer">
+  <div id="previewWrap"><div id="previewRoot"></div></div>
+  <button id="exitPreview">退出预览 · Esc</button>
+</div>
+
+<div id="modal">
+  <div class="modal-box">
+    <div class="modal-head"><b id="modalTitle">代码</b><div class="spacer"></div>
+      <button class="mini" id="modalCopy">复制</button>
+      <button class="mini" id="modalClose">关闭</button>
+    </div>
+    <div class="modal-body"><pre id="modalCode"></pre></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script src="vendor/echarts.min.js"></script>
+<script src="vendor/china.geo.js"></script>
+<script>
+/* ============================================================
+   主题 token —— 换肤只改这 12 个值，图表与 DOM 组件全部跟随
+   ============================================================ */
+var THEMES = {
+  'deep-blue': { label: '深海蓝', bg: '#060B1A', panel: '#0A1526', panelBorder: '#16304F', text: '#E8F3FF', sub: '#7C99BF', accent: '#00D8FF', grid: '#12253F', palette: ['#00D8FF', '#4C7DFF', '#00E3A3', '#FFC94A', '#FF6B8B'] },
+  'midnight':  { label: '暗夜紫', bg: '#0A0716', panel: '#140F26', panelBorder: '#2C2050', text: '#EFE9FF', sub: '#9B8FC4', accent: '#A97BFF', grid: '#201838', palette: ['#A97BFF', '#5B8CFF', '#38E0C8', '#FF7BC4', '#FFD166'] },
+  'obsidian':  { label: '曜石金', bg: '#0A0A0B', panel: '#131314', panelBorder: '#2A2823', text: '#F5F0E6', sub: '#9A9384', accent: '#E8B35A', grid: '#232120', palette: ['#E8B35A', '#C9A227', '#8FA88C', '#D8D2C4', '#A8703E'] },
+  'paper':     { label: '极简白', bg: '#F2F5F9', panel: '#FFFFFF', panelBorder: '#DCE4EE', text: '#16202E', sub: '#64748B', accent: '#2563EB', grid: '#E9EEF6', palette: ['#2563EB', '#0EA5A4', '#F59E0B', '#8B5CF6', '#EF4444'] }
+};
+
+// 自定义主题：初始为深海蓝副本，用户在右侧「页面设置 → 自定义主题」里改色
+THEMES.custom = JSON.parse(JSON.stringify(THEMES['deep-blue']));
+THEMES.custom.label = '自定义';
+
+/* ============================================================
+   渲染器 —— 框架无关，编辑器 / 预览 / 导出 HTML 共用这一份源码
+   （导出时通过 Function.toString 序列化，不做任何"翻译"）
+   ============================================================ */
+function createScreen(root, schema, opts) {
+  var FONT = 'system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif';
+  var FONTX = FONT.replace(/"/g, String.fromCharCode(39)); // 单引号版，用于 HTML style 属性
+  var ec = opts.echarts;
+  var THEMES = opts.themes;
+  var nodes = {};
+  var timer = null, stimer = null;
+  var geoReady = false;
+  var CHART = { 'echarts.line': 1, 'echarts.bar': 1, 'echarts.pie': 1, 'echarts.gauge': 1, 'echarts.map': 1, 'echarts.radar': 1 };
+
+  function ensureMap() {
+    if (!geoReady && opts.geo && opts.geo.china && ec.registerMap) {
+      ec.registerMap('china', opts.geo.china);
+      geoReady = true;
+    }
+  }
+
+  function tok() { return THEMES[schema.page.theme] || THEMES['deep-blue']; }
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function fmtNum(n, dec) {
+    var v = Number(n) || 0;
+    var s = dec > 0 ? v.toFixed(dec) : String(Math.round(v));
+    var p = s.split('.');
+    p[0] = p[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    return p.join('.');
+  }
+  function merge(a, b) {
+    if (!b || typeof b !== 'object') return a;
+    var out = Array.isArray(a) ? a.slice() : Object.assign({}, a);
+    Object.keys(b).forEach(function (k) {
+      var bv = b[k];
+      if (bv && typeof bv === 'object' && !Array.isArray(bv) && a && typeof a[k] === 'object' && !Array.isArray(a[k])) {
+        out[k] = merge(a[k], bv);
+      } else { out[k] = bv; }
+    });
+    return out;
+  }
+
+  // 6 位 hex + alpha（0~1）→ 8 位 hex，用于发光与半透明色
+  function al(hex, a) {
+    if (typeof hex === 'string' && hex.length === 7 && hex.charAt(0) === '#') {
+      var v = Math.round(a * 255).toString(16);
+      if (v.length === 1) v = '0' + v;
+      return hex + v;
+    }
+    return hex;
+  }
+  // 科技感四角边框（带发光）
+  function corners(t) {
+    var s = 'position:absolute;width:9px;height:9px;pointer-events:none;box-shadow:0 0 6px ' + al(t.accent, .55);
+    return '<i style="' + s + ';left:0;top:0;border-left:2px solid ' + t.accent + ';border-top:2px solid ' + t.accent + '"></i>' +
+      '<i style="' + s + ';right:0;top:0;border-right:2px solid ' + t.accent + ';border-top:2px solid ' + t.accent + '"></i>' +
+      '<i style="' + s + ';left:0;bottom:0;border-left:2px solid ' + t.accent + ';border-bottom:2px solid ' + t.accent + '"></i>' +
+      '<i style="' + s + ';right:0;bottom:0;border-right:2px solid ' + t.accent + ';border-bottom:2px solid ' + t.accent + '"></i>';
+  }
+
+  function card(c, t, body) {
+    var p = c.props || {};
+    return '<div style="position:absolute;inset:0;background:' + t.panel + ';border:1px solid ' + t.panelBorder +
+      ';border-radius:4px;overflow:hidden">' +
+      '<i style="position:absolute;left:8%;right:8%;top:0;height:1px;background:linear-gradient(90deg,transparent,' + al(t.accent, .9) + ',transparent);pointer-events:none"></i>' +
+      '<i style="position:absolute;left:0;top:0;right:0;height:52px;background:linear-gradient(180deg,' + al(t.accent, .06) + ',transparent);pointer-events:none"></i>' +
+      corners(t) +
+      '<div style="position:absolute;left:0;top:0;right:0;height:42px;display:flex;align-items:center;gap:8px;padding:0 14px">' +
+      '<i style="display:block;width:3px;height:13px;background:' + t.accent + ';box-shadow:0 0 6px ' + al(t.accent, .8) + '"></i>' +
+      '<span class="sf-card-title" style="font:500 15px/1 ' + FONTX + ';color:' + t.text + ';letter-spacing:.5px">' +
+      esc(p.title || c.name) + '</span></div>' +
+      '<div style="position:absolute;left:0;top:42px;right:0;bottom:0">' + body + '</div></div>';
+  }
+
+  function buildOption(c, t) {
+    t = t || tok();
+    var p = c.props || {};
+    var d = c.data || {};
+    var base = {
+      animationDuration: 700,
+      color: (c.style && c.style.color) || t.palette,
+      textStyle: { fontFamily: FONT, color: t.sub, fontSize: 12 },
+      tooltip: {
+        backgroundColor: 'rgba(10,16,28,.94)', borderColor: t.panelBorder, borderWidth: 1,
+        textStyle: { color: t.text, fontSize: 12 }, axisPointer: { lineStyle: { color: t.accent } }
+      }
+    };
+    var axisLabel = { color: t.sub, fontSize: 12 };
+    var splitLine = { lineStyle: { color: t.grid, type: 'dashed' } };
+    var grid = { left: 18, right: 24, top: 42, bottom: 8, containLabel: true };
+    var legend = p.showLegend
+      ? { right: 14, top: 0, itemWidth: 9, itemHeight: 9, itemGap: 14, textStyle: { color: t.sub, fontSize: 12 } }
+      : { show: false };
+    var o = {};
+
+    if (c.type === 'echarts.line') {
+      o = {
+        grid: grid, legend: legend,
+        xAxis: { type: 'category', boundaryGap: false, data: d.categories || [], axisLine: { lineStyle: { color: t.panelBorder } }, axisTick: { show: false }, axisLabel: axisLabel },
+        yAxis: { type: 'value', axisLine: { show: false }, axisLabel: axisLabel, splitLine: splitLine },
+        series: (d.series || []).map(function (s) {
+          return {
+            name: s.name, type: 'line', smooth: !!p.smooth, showSymbol: false, symbolSize: 5,
+            data: s.values, lineStyle: { width: 2.5 },
+            areaStyle: p.area ? { opacity: 0.14 } : null
+          };
+        })
+      };
+    } else if (c.type === 'echarts.bar') {
+      o = {
+        grid: grid, legend: legend,
+        xAxis: { type: 'category', data: d.categories || [], axisLine: { lineStyle: { color: t.panelBorder } }, axisTick: { show: false }, axisLabel: axisLabel },
+        yAxis: { type: 'value', axisLine: { show: false }, axisLabel: axisLabel, splitLine: splitLine },
+        series: (d.series || []).map(function (s) {
+          return {
+            name: s.name, type: 'bar', stack: p.stack ? 'total' : null,
+            barWidth: p.barWidth || 14, barMaxWidth: 26,
+            itemStyle: { borderRadius: [3, 3, 0, 0] }, data: s.values
+          };
+        })
+      };
+    } else if (c.type === 'echarts.pie') {
+      o = {
+        legend: {
+          show: p.showLegend !== false, bottom: 4, left: 'center', itemWidth: 9, itemHeight: 9,
+          itemGap: 12, textStyle: { color: t.sub, fontSize: 11 }
+        },
+        series: [{
+          type: 'pie', center: ['50%', '46%'],
+          radius: p.donut ? ['48%', '70%'] : ['8%', '68%'],
+          itemStyle: { borderColor: t.panel, borderWidth: 2 },
+          label: { color: t.sub, fontSize: 11, formatter: '{d}%' },
+          labelLine: { length: 6, length2: 6, lineStyle: { color: t.panelBorder } },
+          data: d.items || []
+        }]
+      };
+    } else if (c.type === 'echarts.gauge') {
+      o = {
+        series: [{
+          type: 'gauge', startAngle: 210, endAngle: -30, min: 0, max: p.max || 100,
+          radius: '84%', center: ['50%', '54%'],
+          progress: { show: true, width: 13, itemStyle: { color: t.accent } },
+          axisLine: { lineStyle: { width: 13, color: [[1, t.grid]] } },
+          axisTick: { show: false }, splitLine: { show: false }, axisLabel: { show: false },
+          pointer: { show: false }, anchor: { show: false },
+          title: { offsetCenter: [0, '40%'], color: t.sub, fontSize: 12 },
+          detail: {
+            valueAnimation: true, offsetCenter: [0, '2%'],
+            formatter: '{value}' + (p.unit || ''),
+            color: t.text, fontSize: 34, fontWeight: 500
+          },
+          data: [{ value: d.value || 0, name: p.label || '' }]
+        }]
+      };
+    } else if (c.type === 'echarts.map') {
+      ensureMap();
+      var mitems = d.items || [];
+      var maxv = 1;
+      mitems.forEach(function (i) { if (i.value > maxv) maxv = i.value; });
+      o = {
+        visualMap: {
+          show: p.showLegend !== false, min: 0, max: maxv, left: 10, bottom: 22,
+          text: ['高', '低'], textStyle: { color: t.sub, fontSize: 11 },
+          itemWidth: 9, itemHeight: 52, itemGap: 8,
+          inRange: { color: [t.grid, t.palette[0], t.palette[1]] }
+        },
+        tooltip: Object.assign({}, base.tooltip, { trigger: 'item', formatter: '{b}<br/>{c}' }),
+        series: [{
+          type: 'map', map: 'china', roam: false, zoom: 1.18, top: 8, bottom: 16,
+          itemStyle: { borderColor: t.panelBorder, borderWidth: .6, areaColor: t.grid },
+          emphasis: { label: { color: t.text, fontSize: 11 }, itemStyle: { areaColor: t.palette[0] } },
+          select: { disabled: true },
+          data: mitems
+        }]
+      };
+    } else if (c.type === 'echarts.radar') {
+      o = {
+        legend: legend,
+        radar: {
+          indicator: d.indicators || [], radius: '58%', center: ['50%', '52%'],
+          axisName: { color: t.sub, fontSize: 11 },
+          splitLine: { lineStyle: { color: t.grid } },
+          splitArea: { show: false },
+          axisLine: { lineStyle: { color: t.grid } }
+        },
+        series: [{
+          type: 'radar', symbolSize: 3,
+          data: (d.series || []).map(function (s) {
+            return { name: s.name, value: s.values, areaStyle: { opacity: 0.22 }, lineStyle: { width: 2 } };
+          })
+        }]
+      };
+    }
+
+    var out = Object.assign(base, o);
+    if (c.rawOption) out = merge(out, c.rawOption);
+    return out;
+  }
+
+  function domHTML(c, t) {
+    var p = c.props || {};
+    var d = c.data || {};
+    var shell = 'position:absolute;inset:0;background:' + t.panel + ';border:1px solid ' + t.panelBorder +
+      ';border-radius:4px;overflow:hidden;font-family:' + FONTX;
+
+    if (c.type === 'deco.number') {
+      var up = p.dir === 'up', down = p.dir === 'down';
+      var dcol = up ? '#FF5B6E' : down ? '#00D9A0' : t.sub;
+      return '<div style="' + shell + ';padding:20px 22px">' +
+        corners(t) +
+        '<div style="display:flex;justify-content:space-between;align-items:center">' +
+        '<span style="font:400 13px/1 ' + FONTX + ';color:' + t.sub + ';letter-spacing:1px">' + esc(p.label || '') + '</span>' +
+        '<i style="display:block;width:6px;height:6px;border-radius:50%;background:' + t.accent + ';box-shadow:0 0 7px ' + al(t.accent, .9) + '"></i></div>' +
+        '<div style="margin-top:16px;display:flex;align-items:baseline;gap:7px">' +
+        '<span style="font:600 36px/1 ' + FONTX + ';background:linear-gradient(180deg,' + t.text + ' 30%,' + al(t.accent, .85) + ');-webkit-background-clip:text;background-clip:text;color:transparent;font-variant-numeric:tabular-nums">' +
+        fmtNum(p.value, p.dec || 0) + '</span>' +
+        '<span style="font:400 13px/1 ' + FONTX + ';color:' + t.sub + '">' + esc(p.unit || '') + '</span></div>' +
+        (p.delta ? '<div style="margin-top:12px;font:400 12px/1 ' + FONTX + ';color:' + dcol + '">' +
+          (up ? '▲ ' : down ? '▼ ' : '') + esc(p.delta) +
+          (up || down ? '<span style="color:' + t.sub + ';margin-left:6px">较昨日</span>' : '') + '</div>' : '') +
+        '</div>';
+    }
+
+    if (c.type === 'deco.rank') {
+      var items = (d.items || []).slice(0, p.top || 5);
+      var max = 1;
+      items.forEach(function (i) { if (i.value > max) max = i.value; });
+      var rows = items.map(function (it, i) {
+        var w = Math.max(6, Math.round(it.value / max * 100));
+        var cidx = t.palette[i % t.palette.length];
+        return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:13px">' +
+          '<span style="font:500 12px/1 ' + FONTX + ';color:' + (i < 3 ? t.accent : t.sub) + ';width:18px">' +
+          (i + 1 < 10 ? '0' : '') + (i + 1) + '</span>' +
+          '<div style="flex:1;min-width:0">' +
+          '<div style="display:flex;justify-content:space-between;font:400 12px/1 ' + FONTX + ';color:' + t.text + ';margin-bottom:6px">' +
+          '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.name) + '</span>' +
+          '<span style="color:' + t.sub + ';font-variant-numeric:tabular-nums">' + fmtNum(it.value) + '</span></div>' +
+        '<div style="height:4px;background:' + t.grid + ';border-radius:2px;overflow:hidden">' +
+        '<div style="width:' + w + '%;height:100%;background:linear-gradient(90deg,' + cidx + ',' + al(cidx, .3) + ');box-shadow:0 0 6px ' + al(cidx, .5) + '"></div></div>' +
+        '</div></div>';
+      }).join('');
+      return '<div style="' + shell + ';padding:16px 18px">' +
+        corners(t) +
+        '<div style="margin-bottom:14px;font:500 13px/1 ' + FONTX + ';color:' + t.text + '">' +
+        esc(p.title || c.name) + '</div>' + rows + '</div>';
+    }
+
+    if (c.type === 'deco.scrollList') {
+      var srows = d.items || [];
+      var rh = p.rowH || 34;
+      var stc = { ok: '#00D9A0', warn: '#FFC94A', err: '#FF5B6E' };
+      var stt = { ok: '正常', warn: '预警', err: '告警' };
+      var list = srows.map(function (it, i) {
+        var st = stc[it.status] ? it.status : 'ok';
+        var sc = stc[st];
+        return '<div style="display:flex;align-items:center;gap:10px;height:' + rh + 'px;padding:0 6px;border-radius:3px;background:' + (i % 2 ? al(t.accent, .06) : 'transparent') + ';margin-bottom:4px">' +
+          '<span style="font:500 12px/1 ' + FONTX + ';color:' + (i < 3 ? t.accent : t.sub) + ';width:20px">' + (i + 1 < 10 ? '0' : '') + (i + 1) + '</span>' +
+          '<span style="flex:1;min-width:0;font:400 12.5px/1 ' + FONTX + ';color:' + t.text + ';overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(it.name) + '</span>' +
+          '<span style="font:400 12px/1 ' + FONTX + ';color:' + t.sub + ';font-variant-numeric:tabular-nums">' + esc(it.value != null ? it.value : '') + '</span>' +
+          '<span style="font:500 10.5px/1 ' + FONTX + ';color:' + sc + ';border:1px solid ' + al(sc, .45) + ';padding:3px 0;border-radius:3px;width:44px;text-align:center;white-space:nowrap">' + stt[st] + '</span>' +
+          '</div>';
+      }).join('');
+      var head = '<div style="display:flex;align-items:center;gap:10px;height:26px;padding:0 6px;font:500 11.5px/1 ' + FONTX + ';color:' + t.sub + ';border-bottom:1px solid ' + t.panelBorder + ';margin-bottom:6px">' +
+        '<span style="width:20px"></span><span style="flex:1">名称</span><span>指标</span><span style="width:46px;text-align:center">状态</span></div>';
+      return '<div style="' + shell + ';padding:14px 16px">' +
+        corners(t) +
+        '<div style="margin-bottom:10px;font:500 13px/1 ' + FONTX + ';color:' + t.text + '">' + esc(p.title || c.name) + '</div>' +
+        head +
+        '<div class="sf-scroll" style="position:absolute;left:16px;right:16px;top:70px;bottom:12px;overflow:hidden">' +
+        '<div class="sf-scroll-inner" data-spd="' + (p.speed || 2) * 0.5 + '">' + list + list + '</div></div></div>';
+    }
+
+    if (c.type === 'deco.title') {
+      var wingL = '<div style="display:flex;align-items:center;gap:10px">' +
+        '<i style="display:block;width:110px;height:2px;background:linear-gradient(90deg,transparent,' + al(t.accent, .85) + ')"></i>' +
+        '<i style="display:block;width:7px;height:7px;background:' + t.accent + ';transform:rotate(45deg);box-shadow:0 0 9px ' + al(t.accent, .9) + '"></i></div>';
+      var wingR = '<div style="display:flex;align-items:center;gap:10px">' +
+        '<i style="display:block;width:7px;height:7px;background:' + t.accent + ';transform:rotate(45deg);box-shadow:0 0 9px ' + al(t.accent, .9) + '"></i>' +
+        '<i style="display:block;width:110px;height:2px;background:linear-gradient(90deg,' + al(t.accent, .85) + ',transparent)"></i></div>';
+      return '<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:' + FONTX + '">' +
+        '<div style="display:flex;align-items:center;gap:26px">' +
+        wingL +
+        '<div style="font-size:' + (p.size || 36) + 'px;font-weight:600;background:linear-gradient(90deg,' + t.palette[0] + ',' + t.text + ' 50%,' + t.palette[1] + ');-webkit-background-clip:text;background-clip:text;color:transparent;letter-spacing:7px;text-indent:7px">' +
+        esc(p.text || '') + '</div>' +
+        wingR +
+        '</div>' +
+        (p.sub ? '<div style="margin-top:9px;font-size:12px;color:' + t.sub + ';letter-spacing:4px">' + esc(p.sub) + '</div>' : '') +
+        '<div style="margin-top:14px;width:160px;height:2px;background:linear-gradient(90deg,transparent,' + t.accent + ',transparent);box-shadow:0 0 8px ' + al(t.accent, .6) + '"></div></div>';
+    }
+
+    if (c.type === 'deco.clock') {
+      return '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:0 4px;font-family:' + FONTX + '">' +
+        '<span class="sf-clock" style="font:500 16px/1 ' + FONTX + ';color:' + t.text + ';font-variant-numeric:tabular-nums;letter-spacing:1px">--:--:--</span>' +
+        '<span class="sf-date" style="font:400 12px/1 ' + FONTX + ';color:' + t.sub + '">----</span></div>';
+    }
+
+    return '';
+  }
+
+  function place(el, r) {
+    el.style.left = r.x + 'px';
+    el.style.top = r.y + 'px';
+    el.style.width = r.w + 'px';
+    el.style.height = r.h + 'px';
+    el.style.transform = r.rotate ? 'rotate(' + r.rotate + 'deg)' : '';
+  }
+
+  function renderComp(c) {
+    var t = tok();
+    var rec = nodes[c.id];
+    if (!rec) {
+      var el = document.createElement('div');
+      el.setAttribute('data-cid', c.id);
+      el.style.position = 'absolute';
+      el.style.boxSizing = 'border-box';
+      root.appendChild(el);
+      rec = { el: el, chart: null, type: null, theme: null };
+      nodes[c.id] = rec;
+    }
+    var node = rec.el;
+    place(node, c.rect);
+    node.style.zIndex = c.z || 1;
+    node.style.display = c.hidden ? 'none' : 'block';
+
+    var isChart = !!CHART[c.type];
+    if (rec.type !== c.type || rec.theme !== schema.page.theme) {
+      if (rec.chart) { rec.chart.dispose(); rec.chart = null; }
+      node.innerHTML = '';
+      rec.type = c.type;
+      rec.theme = schema.page.theme;
+    }
+
+    if (isChart) {
+      if (!rec.chart || !node.querySelector('.sf-chart')) {
+        node.innerHTML = card(c, t, '<div class="sf-chart" style="position:absolute;inset:0"></div>');
+        rec.chart = ec.init(node.querySelector('.sf-chart'), null, { renderer: 'canvas' });
+      } else {
+        var tt = node.querySelector('.sf-card-title');
+        if (tt) tt.textContent = c.props.title || c.name;
+      }
+      rec.chart.setOption(buildOption(c, t), true);
+    } else {
+      node.innerHTML = domHTML(c, t);
+    }
+  }
+
+  function tick() {
+    var clocks = root.querySelectorAll('.sf-clock');
+    if (!clocks.length) return;
+    var now = new Date();
+    var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+    var hh = pad(now.getHours()) + ':' + pad(now.getMinutes()) + ':' + pad(now.getSeconds());
+    var wk = '日一二三四五六'.charAt(now.getDay());
+    var dd = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate()) + ' 周' + wk;
+    for (var i = 0; i < clocks.length; i++) clocks[i].textContent = hh;
+    var dates = root.querySelectorAll('.sf-date');
+    for (var j = 0; j < dates.length; j++) dates[j].textContent = dd;
+  }
+
+  // 滚动列表：内容翻倍后向上平移，超过一半高度时归零，实现无缝循环
+  function scrollTick() {
+    var els = root.querySelectorAll('.sf-scroll-inner');
+    for (var i = 0; i < els.length; i++) {
+      var el = els[i];
+      if (!el._h) { el._h = el.scrollHeight / 2; if (!el._h) continue; }
+      if (el._off === undefined) el._off = 0;
+      el._off += Number(el.getAttribute('data-spd')) || 1;
+      if (el._off >= el._h) el._off = 0;
+      el.style.transform = 'translateY(-' + el._off + 'px)';
+    }
+  }
+
+  function update(next) {
+    schema = next;
+    var t = tok();
+    root.style.width = schema.page.width + 'px';
+    root.style.height = schema.page.height + 'px';
+    root.style.background = schema.page.background ||
+      ('radial-gradient(130% 95% at 50% 0%,' + t.panel + ' 0%,' + t.bg + ' 62%)');
+    var alive = {};
+    (schema.components || []).forEach(function (c) { alive[c.id] = 1; renderComp(c); });
+    Object.keys(nodes).forEach(function (id) {
+      if (alive[id]) return;
+      var rec = nodes[id];
+      if (rec.chart) rec.chart.dispose();
+      if (rec.el.parentNode) rec.el.parentNode.removeChild(rec.el);
+      delete nodes[id];
+    });
+    tick();
+  }
+
+  function updateLayout(next) {
+    schema = next;
+    (schema.components || []).forEach(function (c) {
+      var rec = nodes[c.id];
+      if (!rec) return;
+      place(rec.el, c.rect);
+      rec.el.style.zIndex = c.z || 1;
+      rec.el.style.display = c.hidden ? 'none' : 'block';
+      if (rec.chart) rec.chart.resize();
+    });
+  }
+
+  function resize() {
+    Object.keys(nodes).forEach(function (id) {
+      var rec = nodes[id];
+      if (rec.chart) rec.chart.resize();
+    });
+  }
+
+  function dispose() {
+    if (timer) clearInterval(timer);
+    if (stimer) clearInterval(stimer);
+    Object.keys(nodes).forEach(function (id) { if (nodes[id].chart) nodes[id].chart.dispose(); });
+    nodes = {};
+    root.innerHTML = '';
+  }
+
+  if (typeof window !== 'undefined') { timer = setInterval(tick, 1000); stimer = setInterval(scrollTick, 40); }
+  update(schema);
+
+  return { update: update, updateLayout: updateLayout, resize: resize, dispose: dispose, buildOption: buildOption };
+}
+
+/* ============================================================
+   初始示例大屏
+   ============================================================ */
+var INITIAL = {
+  version: 1,
+  page: { width: 1920, height: 1080, theme: 'deep-blue', background: '', title: '城市运行监测中心' },
+  components: [
+    { id: 't1', type: 'deco.title', name: '主标题', rect: { x: 0, y: 22, w: 1920, h: 96 }, z: 9,
+      props: { text: '城市运行监测中心', sub: 'CITY OPERATION MONITORING CENTER', size: 38 } },
+    { id: 'clk', type: 'deco.clock', name: '时间', rect: { x: 1480, y: 26, w: 400, h: 40 }, z: 10, props: {} },
+
+    { id: 'k1', type: 'deco.number', name: '今日客流', rect: { x: 40, y: 132, w: 442, h: 132 }, z: 1,
+      props: { label: '今日客流', value: 128436, unit: '人次', delta: '+12.4%', dir: 'up' } },
+    { id: 'k2', type: 'deco.number', name: '在线设备', rect: { x: 506, y: 132, w: 442, h: 132 }, z: 1,
+      props: { label: '在线设备', value: 3842, unit: '台', delta: '98.2% 在线', dir: '' } },
+    { id: 'k3', type: 'deco.number', name: '事件告警', rect: { x: 972, y: 132, w: 442, h: 132 }, z: 1,
+      props: { label: '事件告警', value: 27, unit: '件', delta: '8 件', dir: 'down' } },
+    { id: 'k4', type: 'deco.number', name: '平均响应', rect: { x: 1438, y: 132, w: 442, h: 132 }, z: 1,
+      props: { label: '平均响应', value: 4.2, unit: '分钟', dec: 1, delta: '0.6', dir: 'down' } },
+
+    { id: 'c1', type: 'echarts.line', name: '客流趋势', rect: { x: 40, y: 292, w: 940, h: 336 }, z: 1,
+      props: { title: '今日客流趋势（分时）', smooth: true, area: true, showLegend: true },
+      data: {
+        categories: ['00', '02', '04', '06', '08', '10', '12', '14', '16', '18', '20', '22'],
+        series: [
+          { name: '进站', values: [120, 86, 64, 320, 980, 1240, 1080, 960, 1180, 1420, 860, 320] },
+          { name: '出站', values: [96, 72, 58, 260, 820, 1080, 1240, 1020, 1080, 1560, 980, 380] }
+        ]
+      } },
+    { id: 'c2', type: 'echarts.pie', name: '出行方式', rect: { x: 1004, y: 292, w: 380, h: 336 }, z: 1,
+      props: { title: '出行方式占比', donut: true },
+      data: { items: [
+        { name: '地铁', value: 4820 }, { name: '公交', value: 3140 }, { name: '出租', value: 1620 },
+        { name: '骑行', value: 980 }, { name: '其他', value: 420 }
+      ] } },
+    { id: 'm1', type: 'echarts.map', name: '全国分布', rect: { x: 1408, y: 292, w: 472, h: 336 }, z: 1,
+      props: { title: '全国客流分布' },
+      data: { items: [
+        { name: '广东', value: 820 }, { name: '北京', value: 640 }, { name: '浙江', value: 520 },
+        { name: '江苏', value: 430 }, { name: '四川', value: 460 }, { name: '山东', value: 380 },
+        { name: '湖北', value: 300 }, { name: '福建', value: 260 }, { name: '陕西', value: 200 },
+        { name: '河南', value: 240 }, { name: '辽宁', value: 170 }, { name: '上海', value: 350 }
+      ] } },
+
+    { id: 'c3', type: 'echarts.bar', name: '区域客流', rect: { x: 40, y: 662, w: 600, h: 368 }, z: 1,
+      props: { title: '各区域客流对比', showLegend: true, barWidth: 16 },
+      data: {
+        categories: ['中心区', '东城区', '西城区', '南山区', '北站区', '高新区'],
+        series: [
+          { name: '本周', values: [1820, 1460, 1280, 1120, 940, 760] },
+          { name: '上周', values: [1560, 1320, 1180, 980, 880, 690] }
+        ]
+      } },
+    { id: 'c4', type: 'echarts.gauge', name: '车位占用', rect: { x: 664, y: 662, w: 380, h: 368 }, z: 1,
+      props: { title: '车位占用率', label: '当前占用', max: 100, unit: '%' }, data: { value: 68 } },
+    { id: 's1', type: 'deco.scrollList', name: '实时事件流', rect: { x: 1068, y: 662, w: 380, h: 368 }, z: 1,
+      props: { title: '实时事件流', rowH: 34, speed: 2 },
+      data: { items: [
+        { name: '东区机房 A-01', value: 'CPU 92%', status: 'err' },
+        { name: '南区网关 G-14', value: '丢包 3.1%', status: 'warn' },
+        { name: '支付网关 P-02', value: '延迟 820ms', status: 'warn' },
+        { name: '北区存储 S-07', value: '容量 76%', status: 'ok' },
+        { name: '调度中心 D-01', value: '队列 1204', status: 'ok' },
+        { name: '西区缓存 C-19', value: '命中率 98%', status: 'ok' },
+        { name: '东区机房 A-05', value: 'CPU 45%', status: 'ok' },
+        { name: '数据库主库 M-01', value: '连接 4820', status: 'warn' },
+        { name: '备份节点 B-03', value: '进度 64%', status: 'ok' }
+      ] } },
+    { id: 'c5', type: 'deco.rank', name: '热门站点', rect: { x: 1472, y: 662, w: 408, h: 368 }, z: 1,
+      props: { title: '热门站点 TOP5', top: 5 },
+      data: { items: [
+        { name: '中央车站', value: 4820 }, { name: '科技园站', value: 3640 },
+        { name: '体育中心', value: 2980 }, { name: '老城广场', value: 2140 },
+        { name: '机场 T2', value: 1620 }
+      ] } }
+  ],
+  dataSources: []
+};
+
+/* ============================================================
+   物料定义（编辑器侧：尺寸 & 默认数据）
+   ============================================================ */
+var MATERIALS = [
+  { type: 'echarts.line',  name: '折线图', cat: '图表', w: 620, h: 300, props: { title: '折线图', smooth: true, area: true, showLegend: true },
+    data: { categories: ['一月', '二月', '三月', '四月', '五月'], series: [{ name: '系列1', values: [120, 200, 150, 260, 180] }] } },
+  { type: 'echarts.bar',   name: '柱状图', cat: '图表', w: 620, h: 300, props: { title: '柱状图', showLegend: true, barWidth: 16 },
+    data: { categories: ['A', 'B', 'C', 'D', 'E'], series: [{ name: '系列1', values: [120, 200, 150, 260, 180] }] } },
+  { type: 'echarts.pie',   name: '饼图', cat: '图表', w: 420, h: 300, props: { title: '饼图', donut: true, showLegend: true },
+    data: { items: [{ name: 'A', value: 40 }, { name: 'B', value: 28 }, { name: 'C', value: 20 }, { name: 'D', value: 12 }] } },
+  { type: 'echarts.gauge', name: '仪表盘', cat: '图表', w: 380, h: 300, props: { title: '仪表盘', label: '当前值', max: 100, unit: '%' }, data: { value: 72 } },
+  { type: 'echarts.map',   name: '中国地图', cat: '图表', w: 640, h: 460, props: { title: '全国区域分布' },
+    data: { items: [
+      { name: '广东', value: 820 }, { name: '北京', value: 640 }, { name: '浙江', value: 520 },
+      { name: '江苏', value: 430 }, { name: '四川', value: 460 }, { name: '山东', value: 380 },
+      { name: '湖北', value: 300 }, { name: '福建', value: 260 }, { name: '陕西', value: 200 }
+    ] } },
+  { type: 'echarts.radar', name: '雷达图', cat: '图表', w: 480, h: 380, props: { title: '能力雷达', showLegend: true },
+    data: { indicators: [{ name: '销售', max: 100 }, { name: '管理', max: 100 }, { name: '信息', max: 100 }, { name: '技术', max: 100 }, { name: '服务', max: 100 }, { name: '协同', max: 100 }],
+      series: [{ name: '本期', values: [82, 70, 64, 88, 76, 60] }, { name: '上期', values: [70, 60, 58, 72, 66, 55] }] } },
+  { type: 'deco.number',   name: '数字翻牌', cat: '装饰', w: 300, h: 132, props: { label: '指标名', value: 12846, unit: '个', delta: '+8.2%', dir: 'up' } },
+  { type: 'deco.rank',     name: '排行榜', cat: '装饰', w: 420, h: 368, props: { title: '排行榜 TOP5', top: 5 },
+    data: { items: [{ name: '项目一', value: 820 }, { name: '项目二', value: 640 }, { name: '项目三', value: 480 }] } },
+  { type: 'deco.scrollList', name: '滚动列表', cat: '装饰', w: 460, h: 320, props: { title: '实时事件流', rowH: 34, speed: 2 },
+    data: { items: [
+      { name: '服务器 A-01', value: 'CPU 92%', status: 'err' },
+      { name: '网关 G-14', value: '丢包 3.1%', status: 'warn' },
+      { name: '存储 S-07', value: '容量 76%', status: 'ok' },
+      { name: '调度 D-01', value: '队列 1204', status: 'ok' },
+      { name: '缓存 C-19', value: '命中率 98%', status: 'ok' }
+    ] } },
+  { type: 'deco.title',    name: '标题', cat: '文字', w: 900, h: 90, props: { text: '大屏标题', sub: 'SUB TITLE', size: 34 } },
+  { type: 'deco.clock',    name: '时间', cat: '文字', w: 340, h: 40, props: {} }
+];
+
+var FIELDS = {
+  'echarts.line': [
+    { k: 'title', l: '标题', t: 'text' }, { k: 'smooth', l: '平滑曲线', t: 'switch' },
+    { k: 'area', l: '面积填充', t: 'switch' }, { k: 'showLegend', l: '显示图例', t: 'switch' }
+  ],
+  'echarts.bar': [
+    { k: 'title', l: '标题', t: 'text' }, { k: 'barWidth', l: '柱宽', t: 'number', min: 4, max: 60 },
+    { k: 'stack', l: '堆叠显示', t: 'switch' }, { k: 'showLegend', l: '显示图例', t: 'switch' }
+  ],
+  'echarts.pie': [
+    { k: 'title', l: '标题', t: 'text' }, { k: 'donut', l: '环形', t: 'switch' },
+    { k: 'showLegend', l: '显示图例', t: 'switch' }
+  ],
+  'echarts.gauge': [
+    { k: 'title', l: '标题', t: 'text' }, { k: 'label', l: '指标名', t: 'text' },
+    { k: 'max', l: '最大值', t: 'number' }, { k: 'unit', l: '单位', t: 'text' }
+  ],
+  'echarts.map': [
+    { k: 'title', l: '标题', t: 'text' }, { k: 'showLegend', l: '显示数值色阶', t: 'switch' }
+  ],
+  'echarts.radar': [
+    { k: 'title', l: '标题', t: 'text' }, { k: 'showLegend', l: '显示图例', t: 'switch' }
+  ],
+  'deco.number': [
+    { k: 'label', l: '指标名', t: 'text' }, { k: 'value', l: '数值', t: 'number' },
+    { k: 'unit', l: '单位', t: 'text' }, { k: 'delta', l: '趋势文本', t: 'text' },
+    { k: 'dir', l: '趋势方向', t: 'select', opts: [['', '无'], ['up', '上升（红）'], ['down', '下降（绿）']] }
+  ],
+  'deco.rank': [{ k: 'title', l: '标题', t: 'text' }, { k: 'top', l: '显示条数', t: 'number', min: 3, max: 10 }],
+  'deco.scrollList': [
+    { k: 'title', l: '标题', t: 'text' }, { k: 'rowH', l: '行高', t: 'number', min: 24, max: 60 },
+    { k: 'speed', l: '滚动速度', t: 'number', min: 1, max: 10 }
+  ],
+  'deco.title': [
+    { k: 'text', l: '主标题', t: 'text' }, { k: 'sub', l: '副标题', t: 'text' },
+    { k: 'size', l: '字号', t: 'number', min: 16, max: 72 }
+  ],
+  'deco.clock': []
+};
+
+/* ============================================================
+   编辑器状态
+   ============================================================ */
+var state = JSON.parse(JSON.stringify(INITIAL));
+var hStack = [], hIdx = -1;
+var ui = { selId: null, scale: 1 };
+var drag = null, guides = [], seq = 1;
+
+var stage = document.getElementById('stage');
+var wrap = document.getElementById('wrap');
+var screenRoot = document.getElementById('screenRoot');
+var overlay = document.getElementById('overlay');
+var inspector = document.getElementById('inspector');
+var paletteEl = document.getElementById('palette');
+var toastEl = document.getElementById('toast');
+
+var scene = createScreen(screenRoot, state, { echarts: echarts, themes: THEMES, geo: { china: window.CHINA_GEO } });
+
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
+function findComp(id) {
+  for (var i = 0; i < state.components.length; i++) if (state.components[i].id === id) return state.components[i];
+  return null;
+}
+function getSel() { return ui.selId ? findComp(ui.selId) : null; }
+function uid() { return 'c' + (Date.now().toString(36)) + (seq++).toString(36); }
+
+function pushHistory() {
+  hStack = hStack.slice(0, hIdx + 1);
+  hStack.push(JSON.stringify(state));
+  if (hStack.length > 60) hStack.shift();
+  hIdx = hStack.length - 1;
+}
+function commit() { pushHistory(); refreshAll(); }
+function undo() {
+  if (hIdx <= 0) return;
+  hIdx--;
+  state = JSON.parse(hStack[hIdx]);
+  if (ui.selId && !findComp(ui.selId)) ui.selId = null;
+  refreshAll();
+}
+function redo() {
+  if (hIdx >= hStack.length - 1) return;
+  hIdx++;
+  state = JSON.parse(hStack[hIdx]);
+  if (ui.selId && !findComp(ui.selId)) ui.selId = null;
+  refreshAll();
+}
+
+/* ============================================================
+   画布缩放 / 坐标换算（16:9 letterbox）
+   ============================================================ */
+function fitStage() {
+  var r = stage.getBoundingClientRect();
+  var k = Math.min((r.width - 60) / 1920, (r.height - 60) / 1080);
+  k = Math.max(k, 0.12);
+  ui.scale = k;
+  wrap.style.transform = 'scale(' + k + ')';
+  wrap.style.left = Math.round((r.width - 1920 * k) / 2) + 'px';
+  wrap.style.top = Math.round((r.height - 1080 * k) / 2) + 'px';
+  drawOverlay();
+}
+function toDesign(e) {
+  var r = wrap.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / ui.scale, y: (e.clientY - r.top) / ui.scale };
+}
+
+/* ============================================================
+   选中 / 命中测试 / 拖拽 / 缩放
+   ============================================================ */
+var HANDLES = [{ k: 'nw', x: 0, y: 0 }, { k: 'n', x: .5, y: 0 }, { k: 'ne', x: 1, y: 0 }, { k: 'e', x: 1, y: .5 },
+               { k: 'se', x: 1, y: 1 }, { k: 's', x: .5, y: 1 }, { k: 'sw', x: 0, y: 1 }, { k: 'w', x: 0, y: .5 }];
+
+function hitTest(p) {
+  var list = state.components.slice().sort(function (a, b) { return (b.z || 1) - (a.z || 1); });
+  for (var i = 0; i < list.length; i++) {
+    var c = list[i];
+    if (c.hidden || c.locked) continue;
+    var r = c.rect;
+    if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) return c;
+  }
+  return null;
+}
+function handleAt(c, p) {
+  var t = 9 / ui.scale;
+  for (var i = 0; i < HANDLES.length; i++) {
+    var h = HANDLES[i];
+    var hx = c.rect.x + c.rect.w * h.x, hy = c.rect.y + c.rect.h * h.y;
+    if (Math.abs(p.x - hx) <= t && Math.abs(p.y - hy) <= t) return h.k;
+  }
+  return null;
+}
+var CUR = { nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
+
+function select(id) {
+  ui.selId = id;
+  drawOverlay();
+  renderInspector();
+}
+
+wrap.addEventListener('pointerdown', function (e) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  var p = toDesign(e);
+  var cur = getSel();
+  var h = cur && !cur.locked ? handleAt(cur, p) : null;
+  if (h) { startDrag(e, cur, 'resize', h, p); return; }
+  var hit = hitTest(p);
+  if (!hit) { select(null); return; }
+  if (hit.id !== ui.selId) select(hit.id);
+  startDrag(e, hit, 'move', null, p);
+});
+
+wrap.addEventListener('pointermove', function (e) {
+  if (drag) return;
+  var p = toDesign(e);
+  var cur = getSel();
+  var h = cur && !cur.locked ? handleAt(cur, p) : null;
+  if (h) { wrap.style.cursor = CUR[h]; return; }
+  wrap.style.cursor = hitTest(p) ? 'move' : 'default';
+});
+
+function startDrag(e, c, mode, handle, p) {
+  drag = {
+    id: c.id, mode: mode, handle: handle,
+    sx: p.x, sy: p.y, orig: { x: c.rect.x, y: c.rect.y, w: c.rect.w, h: c.rect.h },
+    moved: false, pid: e.pointerId
+  };
+  guides = [];
+  wrap.setPointerCapture(e.pointerId);
+}
+
+window.addEventListener('pointermove', function (e) {
+  if (!drag || e.pointerId !== drag.pid) return;
+  var p = toDesign(e);
+  var dx = p.x - drag.sx, dy = p.y - drag.sy;
+  if (Math.abs(dx) > 1 || Math.abs(dy) > 1) drag.moved = true;
+  var c = findComp(drag.id);
+  if (!c) return;
+
+  if (drag.mode === 'move') {
+    var res = snapPos(c, drag.orig.x + dx, drag.orig.y + dy);
+    c.rect.x = res.x; c.rect.y = res.y;
+    guides = res.guides;
+  } else {
+    c.rect = resizeRect(drag.orig, drag.handle, dx, dy);
+    guides = [];
+  }
+  scene.updateLayout(state);
+  drawOverlay();
+  syncRectInputs();
+});
+
+window.addEventListener('pointerup', function (e) {
+  if (!drag) return;
+  try { wrap.releasePointerCapture(drag.pid); } catch (err) {}
+  var moved = drag.moved;
+  drag = null;
+  guides = [];
+  drawOverlay();
+  if (moved) { pushHistory(); renderInspector(); }
+});
+
+function snapPos(c, x, y) {
+  var T = 8, W = 1920, H = 1080, g = [];
+  var xc = [
+    { pos: 0, line: 0 }, { pos: (W - c.rect.w) / 2, line: W / 2 }, { pos: W - c.rect.w, line: W }
+  ];
+  var yc = [
+    { pos: 0, line: 0 }, { pos: (H - c.rect.h) / 2, line: H / 2 }, { pos: H - c.rect.h, line: H }
+  ];
+  state.components.forEach(function (o) {
+    if (o.id === c.id) return;
+    xc.push({ pos: o.rect.x, line: o.rect.x });
+    xc.push({ pos: o.rect.x + o.rect.w, line: o.rect.x + o.rect.w });
+    yc.push({ pos: o.rect.y, line: o.rect.y });
+    yc.push({ pos: o.rect.y + o.rect.h, line: o.rect.y + o.rect.h });
+  });
+  var bx = null, by = null;
+  xc.forEach(function (v) { var d = Math.abs(x - v.pos); if (d < T && (!bx || d < bx.d)) bx = { d: d, v: v }; });
+  yc.forEach(function (v) { var d = Math.abs(y - v.pos); if (d < T && (!by || d < by.d)) by = { d: d, v: v }; });
+  if (bx) { x = bx.v.pos; g.push({ axis: 'v', pos: bx.v.line }); }
+  if (by) { y = by.v.pos; g.push({ axis: 'h', pos: by.v.line }); }
+  return { x: Math.round(x), y: Math.round(y), guides: g };
+}
+
+function resizeRect(o, handle, dx, dy) {
+  var x = o.x, y = o.y, w = o.w, h = o.h, MIN = 60;
+  if (handle.indexOf('w') > -1) { x = o.x + dx; w = o.w - dx; }
+  if (handle.indexOf('e') > -1) { w = o.w + dx; }
+  if (handle.indexOf('n') > -1) { y = o.y + dy; h = o.h - dy; }
+  if (handle.indexOf('s') > -1) { h = o.h + dy; }
+  if (w < MIN) { if (handle.indexOf('w') > -1) x = o.x + o.w - MIN; w = MIN; }
+  if (h < MIN) { if (handle.indexOf('n') > -1) y = o.y + o.h - MIN; h = MIN; }
+  return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) };
+}
+
+/* ============================================================
+   画布覆盖层：选框 / 手柄 / 吸附参考线
+   ============================================================ */
+function drawOverlay() {
+  var html = '';
+  var hs = 9 / ui.scale;
+  var c = getSel();
+  if (c) {
+    var r = c.rect;
+    html += '<div style="position:absolute;left:' + r.x + 'px;top:' + r.y + 'px;width:' + r.w + 'px;height:' + r.h +
+      'px;border:1.5px solid #4C8DFF;pointer-events:none"></div>';
+    if (!c.locked) {
+      HANDLES.forEach(function (h) {
+        var hx = r.x + r.w * h.x - hs / 2, hy = r.y + r.h * h.y - hs / 2;
+        html += '<div style="position:absolute;left:' + hx + 'px;top:' + hy + 'px;width:' + hs + 'px;height:' + hs +
+          'px;background:#fff;border:1.5px solid #4C8DFF;border-radius:1px;pointer-events:none"></div>';
+      });
+    }
+    var badge = '<div style="position:absolute;left:' + (r.x + 5) + 'px;top:' + (r.y + r.h - 15 / ui.scale) +
+      'px;font:500 ' + (10 / ui.scale) + 'px/1 system-ui;color:#9DC0FF;white-space:nowrap;pointer-events:none;background:#0B1524;padding:2px 4px;border-radius:2px">' +
+      Math.round(r.w) + ' × ' + Math.round(r.h) + '</div>';
+    html += badge;
+  }
+  guides.forEach(function (g) {
+    if (g.axis === 'v') {
+      html += '<div style="position:absolute;left:' + g.pos + 'px;top:0;width:1px;height:1080px;background:#FF4D7E;opacity:.85"></div>';
+    } else {
+      html += '<div style="position:absolute;top:' + g.pos + 'px;left:0;height:1px;width:1920px;background:#FF4D7E;opacity:.85"></div>';
+    }
+  });
+  overlay.innerHTML = html;
+}
+
+/* ============================================================
+   物料库
+   ============================================================ */
+function icon(type) {
+  var c = 'currentColor';
+  if (type === 'echarts.line') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><polyline points="2,18 9,11 15,14 22,5 28,9" stroke="' + c + '" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="22" cy="5" r="1.9" fill="' + c + '"/></svg>';
+  if (type === 'echarts.bar') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><rect x="3" y="12" width="5" height="9" fill="' + c + '"/><rect x="12" y="6" width="5" height="15" fill="' + c + '"/><rect x="21" y="9" width="5" height="12" fill="' + c + '"/></svg>';
+  if (type === 'echarts.pie') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><circle cx="15" cy="12" r="9" stroke="' + c + '" stroke-width="1.8"/><path d="M15 12 L15 3 A9 9 0 0 1 23 16 Z" fill="' + c + '" opacity=".85"/></svg>';
+  if (type === 'echarts.gauge') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><path d="M4 18 A11 11 0 0 1 26 18" stroke="' + c + '" stroke-width="1.8" stroke-linecap="round"/><path d="M15 18 L21 10" stroke="' + c + '" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  if (type === 'echarts.map') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><path d="M5 9 L11 5 L19 6 L25 11 L22 17 L14 20 L8 17 Z" stroke="' + c + '" stroke-width="1.6" stroke-linejoin="round"/><circle cx="14" cy="12" r="1.6" fill="' + c + '"/><circle cx="20" cy="9" r="1.3" fill="' + c + '" opacity=".7"/></svg>';
+  if (type === 'echarts.radar') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><polygon points="15,3 23.5,9.2 20.3,19.3 9.7,19.3 6.4,9.2" stroke="' + c + '" stroke-width="1.6" stroke-linejoin="round"/><polygon points="15,8 19,11 17.6,16 12.4,16 11,11" fill="' + c + '" opacity=".55"/></svg>';
+  if (type === 'deco.number') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><text x="15" y="18" text-anchor="middle" font-size="14" font-weight="600" fill="' + c + '" font-family="system-ui">128</text></svg>';
+  if (type === 'deco.rank') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><rect x="3" y="4" width="18" height="2.5" fill="' + c + '"/><rect x="3" y="11" width="24" height="2.5" fill="' + c + '" opacity=".75"/><rect x="3" y="18" width="13" height="2.5" fill="' + c + '" opacity=".55"/></svg>';
+  if (type === 'deco.scrollList') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><rect x="4" y="4" width="20" height="4" rx="1" stroke="' + c + '" stroke-width="1.5"/><rect x="4" y="11" width="20" height="4" rx="1" stroke="' + c + '" stroke-width="1.5" opacity=".75"/><rect x="4" y="18" width="13" height="4" rx="1" stroke="' + c + '" stroke-width="1.5" opacity=".55"/><path d="M25 16 L25 22 M22.5 19.5 L25 22 L27.5 19.5" stroke="' + c + '" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  if (type === 'deco.title') return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><text x="15" y="18" text-anchor="middle" font-size="14" font-weight="600" fill="' + c + '" font-family="system-ui">Aa</text></svg>';
+  return '<svg width="30" height="24" viewBox="0 0 30 24" fill="none"><circle cx="15" cy="12" r="9" stroke="' + c + '" stroke-width="1.8"/><path d="M15 7 L15 12 L19 14" stroke="' + c + '" stroke-width="1.8" stroke-linecap="round"/></svg>';
+}
+
+function buildPalette() {
+  var cats = ['图表', '装饰', '文字'];
+  var html = '';
+  cats.forEach(function (cat) {
+    html += '<div class="sec-t">' + cat + '</div><div class="grid2">';
+    MATERIALS.filter(function (m) { return m.cat === cat; }).forEach(function (m, i) {
+      html += '<div class="tile" draggable="true" data-type="' + m.type + '" title="拖入画布，或点击添加">' +
+        icon(m.type) + '<span>' + m.name + '</span></div>';
+    });
+    html += '</div>';
+  });
+  html += '<div class="sec-t">操作提示</div><div class="hint">' +
+    '拖拽或点击添加组件<br>选中后拖边框缩放<br><span class="kbd">Delete</span> 删除 · <span class="kbd">Ctrl+Z</span> 撤销<br>' +
+    '方向键微调位置（Shift ×10）<br>点击空白处编辑页面主题</div>';
+  paletteEl.innerHTML = html;
+
+  paletteEl.querySelectorAll('.tile').forEach(function (t) {
+    t.addEventListener('dragstart', function (e) {
+      e.dataTransfer.setData('text/plain', t.getAttribute('data-type'));
+      e.dataTransfer.effectAllowed = 'copy';
+    });
+    t.addEventListener('click', function () { addMaterial(t.getAttribute('data-type'), null); });
+  });
+}
+
+wrap.addEventListener('dragover', function (e) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+wrap.addEventListener('drop', function (e) {
+  e.preventDefault();
+  var type = e.dataTransfer.getData('text/plain');
+  if (type) addMaterial(type, toDesign(e));
+});
+
+function addMaterial(type, at) {
+  var m = MATERIALS.filter(function (x) { return x.type === type; })[0];
+  if (!m) return;
+  var id = uid();
+  var maxZ = 0;
+  state.components.forEach(function (c) { if ((c.z || 1) > maxZ) maxZ = c.z || 1; });
+  var x = at ? Math.round(at.x - m.w / 2) : 120, y = at ? Math.round(at.y - m.h / 2) : 160;
+  x = Math.max(0, Math.min(1920 - m.w, x));
+  y = Math.max(0, Math.min(1080 - m.h, y));
+  var comp = { id: id, type: type, name: m.name, rect: { x: x, y: y, w: m.w, h: m.h }, z: maxZ + 1, props: clone(m.props) };
+  if (m.data) comp.data = clone(m.data);
+  state.components.push(comp);
+  ui.selId = id;
+  commit();
+}
+
+/* ============================================================
+   属性面板
+   ============================================================ */
+function escAttr(s) { return String(s == null ? '' : s).replace(/"/g, '&quot;').replace(/</g, '&lt;'); }
+
+function fieldRow(f, v) {
+  if (f.t === 'switch') {
+    return '<div class="sw-line"><span>' + f.l + '</span><button class="switch' + (v ? ' on' : '') +
+      '" data-prop="' + f.k + '" data-type="switch"></button></div>';
+  }
+  if (f.t === 'select') {
+    var opts = f.opts.map(function (o) {
+      return '<option value="' + o[0] + '"' + (String(v) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+    }).join('');
+    return '<div class="row"><span class="lb">' + f.l + '</span><select class="in" data-prop="' + f.k + '" data-type="select">' + opts + '</select></div>';
+  }
+  if (f.t === 'number') {
+    return '<div class="row"><span class="lb">' + f.l + '</span><input class="in" type="number" data-prop="' + f.k +
+      '" data-type="number" value="' + escAttr(v) + '"' + (f.min != null ? ' min="' + f.min + '"' : '') + (f.max != null ? ' max="' + f.max + '"' : '') + '></div>';
+  }
+  return '<div class="row"><span class="lb">' + f.l + '</span><input class="in" data-prop="' + f.k + '" data-type="text" value="' + escAttr(v) + '"></div>';
+}
+
+var DATA_TYPES = ['echarts.line', 'echarts.bar', 'echarts.pie', 'echarts.gauge', 'echarts.map', 'echarts.radar', 'deco.rank', 'deco.scrollList'];
+
+function dataBlockHTML(c) {
+  if (DATA_TYPES.indexOf(c.type) < 0) {
+    return '<div class="grp"><div class="grp-t">数据</div><div class="hint">该组件不消费数据集，数值直接在「配置项」里填。</div></div>';
+  }
+  var mode = c.dataMode || 'static';
+  var seg = '<div class="seg">' +
+    '<button class="' + (mode === 'static' ? 'on' : '') + '" data-ds="static">写死数据</button>' +
+    '<button class="' + (mode === 'http' ? 'on' : '') + '" data-ds="http">接口数据</button></div>';
+  var body;
+  if (mode === 'static') {
+    body = '<textarea class="in" id="dataArea" spellcheck="false">' + escAttr(JSON.stringify(c.data || {}, null, 2)) + '</textarea>' +
+      '<div class="mini-btns" style="margin-top:8px"><button class="mini" id="applyData">应用数据</button>' +
+      '<button class="mini" id="randData">随机一批</button></div>';
+  } else {
+    var h = c.http || {};
+    body = '<div class="row"><span class="lb">地址</span><input class="in" data-http="url" placeholder="https://api.example.com/stat" value="' + escAttr(h.url || '') + '"></div>' +
+      '<div class="row"><span class="lb">方法</span><select class="in" data-http="method">' +
+      '<option' + (h.method !== 'POST' ? ' selected' : '') + '>GET</option>' +
+      '<option' + (h.method === 'POST' ? ' selected' : '') + '>POST</option></select></div>' +
+      '<div class="row"><span class="lb">轮询/秒</span><input class="in" type="number" min="0" data-http="interval" value="' + (h.interval || 0) + '"></div>' +
+      '<div class="mini-btns" style="margin-top:8px"><button class="mini" id="testHttp">测试请求</button></div>' +
+      '<div class="hint" style="margin-top:8px">原型不代理、不落库。正式版是「数据源 → 转换表达式 → 字段映射」三段管线，并配原始 / 转换后 / 图表三栏调试视图（见设计方案 §7）。跨域是硬限制：导出的 HTML 直连内网接口会被浏览器拦。</div>';
+  }
+  return '<div class="grp"><div class="grp-t">数据来源</div>' + seg + body + '</div>';
+}
+
+function renderInspector() {
+  var c = getSel();
+
+  if (!c) {
+    var sw = Object.keys(THEMES).map(function (k) {
+      var t = THEMES[k];
+      return '<div class="row"><span class="lb"></span><button class="mini" data-theme="' + k + '" style="flex:1;display:flex;align-items:center;gap:8px;text-align:left' +
+        (state.page.theme === k ? ';border-color:#4C8DFF;color:#DCE6F5' : '') + '">' +
+        '<i style="width:10px;height:10px;border-radius:2px;background:' + t.accent + ';display:inline-block;box-shadow:0 0 5px ' + t.accent + '"></i>' + t.label + '</button></div>';
+    }).join('');
+
+    var ct = THEMES.custom;
+    var cf = [['accent', '主色'], ['bg', '背景'], ['panel', '面板'], ['text', '文字'], ['sub', '副文字']];
+    var crows = cf.map(function (x) {
+      return '<div class="row"><span class="lb">' + x[1] + '</span><input class="in" type="color" data-ct="' + x[0] + '" value="' + ct[x[0]] + '"></div>';
+    }).join('');
+    var cpal = '<div class="row" style="align-items:flex-start"><span class="lb" style="padding-top:6px">图表色</span>' +
+      '<div style="flex:1;display:flex;gap:5px">' +
+      ct.palette.map(function (cc, pi) {
+        return '<input type="color" data-cpal="' + pi + '" value="' + cc + '" style="flex:1;min-width:0;height:26px;padding:1px;border:1px solid #1E2735;border-radius:4px;background:#101724;cursor:pointer">';
+      }).join('') + '</div></div>';
+
+    inspector.innerHTML =
+      '<div class="ins-head"><b>页面设置</b><em>未选中组件</em></div>' +
+      '<div class="grp"><div class="grp-t">主题色板</div>' + sw + '</div>' +
+      '<div class="grp"><div class="grp-t">自定义主题</div>' + crows + cpal +
+      '<div class="mini-btns" style="margin-top:8px"><button class="mini" id="applyCustom">应用并切换</button>' +
+      '<button class="mini" id="resetCustom">从深海蓝重置</button></div>' +
+      '<div class="hint" style="margin-top:8px">改色实时写入「自定义」主题；点「应用并切换」整屏生效并触发换肤动效。</div></div>' +
+      '<div class="grp"><div class="grp-t">页面</div>' +
+      '<div class="row"><span class="lb">背景</span><input class="in" type="color" id="pageBg" value="' + (state.page.background || THEMES[state.page.theme].bg) + '"></div>' +
+      '<div class="row"><span class="lb">尺寸</span><input class="in" value="1920 × 1080（固定 16:9）" disabled style="color:#6F7E96"></div>' +
+      '</div>' +
+      '<div class="grp"><div class="grp-t">组件统计</div><div class="hint">共 ' + state.components.length +
+      ' 个组件 · 图表 ' + state.components.filter(function (x) { return x.type.indexOf('echarts.') === 0; }).length + ' 个</div></div>' +
+      '<div class="grp"><div class="grp-t">快捷键</div><div class="hint">' +
+      '<span class="kbd">Delete</span> 删除选中 · <span class="kbd">Ctrl+D</span> 复制<br>' +
+      '<span class="kbd">Ctrl+Z</span> 撤销 · <span class="kbd">Ctrl+Shift+Z</span> 重做<br>' +
+      '方向键微调 · <span class="kbd">Shift</span>+方向键 ×10</div></div>';
+
+    // 面板色/文字色变化时，自动推导边框色与网格色，避免残留旧主题的蓝调
+    function hexMix(a, b, t) {
+      var pa = [1, 3, 5].map(function (i) { return parseInt(a.substr(i, 2), 16); });
+      var pb = [1, 3, 5].map(function (i) { return parseInt(b.substr(i, 2), 16); });
+      return '#' + pa.map(function (v, i) {
+        var s = Math.round(v + (pb[i] - v) * t).toString(16);
+        return s.length < 2 ? '0' + s : s;
+      }).join('');
+    }
+    function deriveCustom() {
+      var cc = THEMES.custom;
+      if (cc.panel.length === 7 && cc.text.length === 7) {
+        cc.panelBorder = hexMix(cc.panel, cc.text, 0.22);
+        cc.grid = hexMix(cc.panel, cc.text, 0.14);
+      }
+    }
+
+    function afterCustomEdit() {
+      deriveCustom();
+      if (state.page.theme === 'custom') refreshAll(); else buildSwatches();
+    }
+    inspector.querySelectorAll('[data-theme]').forEach(function (b) {
+      b.addEventListener('click', function () { setTheme(b.getAttribute('data-theme')); });
+    });
+    inspector.querySelectorAll('[data-ct]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        THEMES.custom[el.getAttribute('data-ct')] = el.value;
+        afterCustomEdit();
+      });
+    });
+    inspector.querySelectorAll('[data-cpal]').forEach(function (el) {
+      el.addEventListener('input', function () {
+        THEMES.custom.palette[Number(el.getAttribute('data-cpal'))] = el.value;
+        afterCustomEdit();
+      });
+    });
+    document.getElementById('applyCustom').addEventListener('click', function () { setTheme('custom'); });
+    document.getElementById('resetCustom').addEventListener('click', function () {
+      var base = JSON.parse(JSON.stringify(THEMES['deep-blue']));
+      base.label = '自定义';
+      THEMES.custom = base;
+      toast('自定义主题已重置为深海蓝');
+      renderInspector();
+      if (state.page.theme === 'custom') refreshAll(); else buildSwatches();
+    });
+    var bg = document.getElementById('pageBg');
+    if (bg) bg.addEventListener('change', function () {
+      state.page.background = bg.value; pushHistory(); refreshAll();
+    });
+    return;
+  }
+
+  var f = FIELDS[c.type] || [];
+  var propsHTML = f.map(function (x) { return fieldRow(x, c.props[x.k]); }).join('');
+  var matName = (MATERIALS.filter(function (m) { return m.type === c.type; })[0] || {}).name || c.type;
+
+  var layerBtns = '<div class="mini-btns">' +
+    '<button class="mini" data-act="top">置顶</button>' +
+    '<button class="mini" data-act="bottom">置底</button>' +
+    '<button class="mini" data-act="lock">' + (c.locked ? '解锁' : '锁定') + '</button>' +
+    '<button class="mini" data-act="hide">' + (c.hidden ? '显示' : '隐藏') + '</button>' +
+    '<button class="mini" data-act="dup">复制</button>' +
+    '<button class="mini danger" data-act="del">删除</button></div>';
+
+  inspector.innerHTML =
+    '<div class="ins-head"><b>' + matName + '</b><em>' + c.type + '</em></div>' +
+    '<div class="grp"><div class="grp-t">基础</div>' +
+    '<div class="row"><span class="lb">名称</span><input class="in" data-name="1" value="' + escAttr(c.name) + '"></div>' +
+    '<div class="quad">' +
+    '<div class="row"><span class="lb">X</span><input class="in" type="number" data-rect="x" value="' + c.rect.x + '"></div>' +
+    '<div class="row"><span class="lb">Y</span><input class="in" type="number" data-rect="y" value="' + c.rect.y + '"></div>' +
+    '<div class="row"><span class="lb">W</span><input class="in" type="number" data-rect="w" value="' + c.rect.w + '"></div>' +
+    '<div class="row"><span class="lb">H</span><input class="in" type="number" data-rect="h" value="' + c.rect.h + '"></div>' +
+    '</div>' +
+    '<div class="mini-btns" style="margin-top:9px">' +
+    '<button class="mini" data-align="cx">水平居中</button>' +
+    '<button class="mini" data-align="cy">垂直居中</button>' +
+    '<button class="mini" data-align="full">铺满</button></div></div>' +
+    (f.length ? '<div class="grp"><div class="grp-t">配置项</div>' + propsHTML + '</div>' : '') +
+    dataBlockHTML(c) +
+    '<div class="grp"><div class="grp-t">高级（rawOption 逃生舱）</div>' +
+    '<textarea class="in" id="rawArea" style="height:74px" spellcheck="false" placeholder=\'{"legend":{"top":30}}\'>' + escAttr(c.rawOption ? JSON.stringify(c.rawOption, null, 2) : '') + '</textarea>' +
+    '<div class="mini-btns" style="margin-top:8px"><button class="mini" id="applyRaw">应用 option 片段</button>' +
+    '<button class="mini" id="clearRaw">清空</button></div>' +
+    '<div class="hint" style="margin-top:8px">深度 merge 到生成结果之上，用来兜住配置项不够的情况。</div></div>' +
+    '<div class="grp"><div class="grp-t">图层</div>' + layerBtns + '</div>';
+
+  bindInspector(c);
+}
+
+function bindInspector(c) {
+  inspector.querySelectorAll('[data-prop]').forEach(function (el) {
+    var k = el.getAttribute('data-prop'), ty = el.getAttribute('data-type');
+    if (ty === 'switch') {
+      el.addEventListener('click', function () {
+        c.props[k] = !c.props[k];
+        el.classList.toggle('on');
+        scene.update(state);
+        pushHistory();
+      });
+      return;
+    }
+    el.addEventListener('input', function () {
+      var v = ty === 'number' ? Number(el.value) : el.value;
+      c.props[k] = v;
+      scene.update(state);
+    });
+    el.addEventListener('change', function () {
+      var v = ty === 'number' ? Number(el.value) : el.value;
+      c.props[k] = v;
+      pushHistory();
+      refreshAll();
+    });
+  });
+
+  inspector.querySelectorAll('[data-rect]').forEach(function (el) {
+    var k = el.getAttribute('data-rect');
+    el.addEventListener('input', function () {
+      var v = Number(el.value) || 0;
+      c.rect[k] = v;
+      scene.updateLayout(state);
+      drawOverlay();
+    });
+    el.addEventListener('change', function () {
+      c.rect[k] = Number(el.value) || 0;
+      pushHistory();
+      refreshAll();
+    });
+  });
+
+  var nameEl = inspector.querySelector('[data-name]');
+  if (nameEl) nameEl.addEventListener('change', function () { c.name = nameEl.value; pushHistory(); refreshAll(); });
+
+  inspector.querySelectorAll('[data-align]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var a = b.getAttribute('data-align');
+      if (a === 'cx') c.rect.x = Math.round((1920 - c.rect.w) / 2);
+      if (a === 'cy') c.rect.y = Math.round((1080 - c.rect.h) / 2);
+      if (a === 'full') { c.rect = { x: 0, y: 0, w: 1920, h: 1080 }; }
+      commit();
+    });
+  });
+
+  inspector.querySelectorAll('[data-act]').forEach(function (b) {
+    b.addEventListener('click', function () { layerAction(c, b.getAttribute('data-act')); });
+  });
+
+  var dataArea = document.getElementById('dataArea');
+  var applyData = document.getElementById('applyData');
+  if (applyData) applyData.addEventListener('click', function () {
+    try {
+      c.data = JSON.parse(dataArea.value || '{}');
+      commit();
+      toast('数据已应用');
+    } catch (err) { toast('JSON 格式有误：' + err.message); }
+  });
+  var randData = document.getElementById('randData');
+  if (randData) randData.addEventListener('click', function () {
+    c.data = c.data || {};
+    if (c.data.categories) {
+      c.data.categories = c.data.categories.map(function (x) { return x; });
+      c.data.series = (c.data.series || [{ name: '系列1', values: [] }]).map(function (s, i) {
+        return { name: s.name, values: (s.values || []).map(function () { return Math.round(80 + Math.random() * 600); }) };
+      });
+    } else if (c.data.indicators) {
+      c.data.series = (c.data.series || []).map(function (s) {
+        return { name: s.name, values: s.values.map(function () { return Math.round(40 + Math.random() * 60); }) };
+      });
+    } else if (c.data.items && c.data.items.length && typeof c.data.items[0].value === 'string') {
+      c.data.items = c.data.items.map(function (it) {
+        var r = Math.random();
+        return { name: it.name, value: it.value, status: r < 0.15 ? 'err' : r < 0.4 ? 'warn' : 'ok' };
+      });
+    } else if (c.data.items) {
+      c.data.items = c.data.items.map(function (it) { return { name: it.name, value: Math.round(200 + Math.random() * 900) }; });
+    } else if (c.data.value != null) {
+      c.data.value = Math.round(Math.random() * 100);
+    }
+    commit();
+    toast('已生成随机数据');
+  });
+
+  inspector.querySelectorAll('[data-ds]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      c.dataMode = b.getAttribute('data-ds');
+      renderInspector();
+    });
+  });
+  inspector.querySelectorAll('[data-http]').forEach(function (el) {
+    var k = el.getAttribute('data-http');
+    el.addEventListener('change', function () {
+      c.http = c.http || {};
+      c.http[k] = (k === 'interval') ? Number(el.value) : el.value;
+      pushHistory();
+    });
+  });
+  var testHttp = document.getElementById('testHttp');
+  if (testHttp) testHttp.addEventListener('click', function () {
+    var url = (c.http && c.http.url) || '';
+    if (!/^https?:/i.test(url)) { toast('请先填一个 http(s) 地址'); return; }
+    toast('请求中…');
+    fetch(url).then(function (r) { return r.json(); }).then(function (json) {
+      if (json && json.categories && json.series) {
+        c.data = { categories: json.categories, series: json.series };
+        commit(); toast('已按默认结构写入数据');
+      } else if (json && json.items) {
+        c.data = { items: json.items };
+        commit(); toast('已按默认结构写入数据');
+      } else {
+        toast('返回成功，但结构与图表字段不匹配 · 正式版靠映射面板解决');
+      }
+    }).catch(function (e) {
+      toast('请求失败（多半是跨域）· ' + (e.message || 'error'));
+    });
+  });
+
+  var rawArea = document.getElementById('rawArea');
+  var applyRaw = document.getElementById('applyRaw');
+  if (applyRaw) applyRaw.addEventListener('click', function () {
+    try {
+      var txt = (rawArea.value || '').trim();
+      c.rawOption = txt ? JSON.parse(txt) : null;
+      commit();
+      toast('option 片段已合并');
+    } catch (err) { toast('JSON 格式有误：' + err.message); }
+  });
+  var clearRaw = document.getElementById('clearRaw');
+  if (clearRaw) clearRaw.addEventListener('click', function () { c.rawOption = null; commit(); });
+}
+
+function layerAction(c, act) {
+  var maxZ = 0, minZ = 999;
+  state.components.forEach(function (x) { maxZ = Math.max(maxZ, x.z || 1); minZ = Math.min(minZ, x.z || 1); });
+  if (act === 'top') c.z = maxZ + 1;
+  if (act === 'bottom') c.z = minZ - 1;
+  if (act === 'lock') c.locked = !c.locked;
+  if (act === 'hide') c.hidden = !c.hidden;
+  if (act === 'del') {
+    state.components = state.components.filter(function (x) { return x.id !== c.id; });
+    ui.selId = null;
+  }
+  if (act === 'dup') {
+    var copy = clone(c);
+    copy.id = uid();
+    copy.rect.x += 24; copy.rect.y += 24;
+    copy.z = maxZ + 1;
+    copy.name = c.name + ' 副本';
+    state.components.push(copy);
+    ui.selId = copy.id;
+  }
+  commit();
+}
+
+function syncRectInputs() {
+  var c = getSel();
+  if (!c) return;
+  ['x', 'y', 'w', 'h'].forEach(function (k) {
+    var el = inspector.querySelector('[data-rect="' + k + '"]');
+    if (el) el.value = c.rect[k];
+  });
+}
+
+/* ============================================================
+   主题 / 刷新
+   ============================================================ */
+// 换肤撒花：用新主题的图表色生成彩色纸屑，从顶部飘落（约 2.6 秒后自动清理）
+function confettiBurst(colors) {
+  if (!colors || !colors.length) return;
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  var W = window.innerWidth, H = window.innerHeight;
+  var cvs = document.createElement('canvas');
+  cvs.width = W * dpr; cvs.height = H * dpr;
+  cvs.style.cssText = 'position:fixed;left:0;top:0;width:100vw;height:100vh;pointer-events:none;z-index:300';
+  document.body.appendChild(cvs);
+  var ctx = cvs.getContext('2d');
+  ctx.scale(dpr, dpr);
+  var ps = [];
+  for (var i = 0; i < 170; i++) {
+    ps.push({
+      x: Math.random() * W, y: -30 - Math.random() * H * 0.55,
+      vx: (Math.random() - 0.5) * 2.4, vy: 2.2 + Math.random() * 3.8,
+      w: 4 + Math.random() * 7, h: 3 + Math.random() * 5,
+      rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.3,
+      color: colors[i % colors.length]
+    });
+  }
+  var t0 = performance.now();
+  function frame(now) {
+    var el = now - t0;
+    ctx.clearRect(0, 0, W, H);
+    var alive = false;
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i];
+      p.x += p.vx; p.y += p.vy; p.vy += 0.045; p.rot += p.vr;
+      var alpha = el > 1900 ? Math.max(0, 1 - (el - 1900) / 700) : 1;
+      if (alpha <= 0 || p.y > H + 30) continue;
+      alive = true;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle = p.color;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    if (alive && el < 2700) requestAnimationFrame(frame);
+    else if (cvs.parentNode) cvs.parentNode.removeChild(cvs);
+  }
+  requestAnimationFrame(frame);
+}
+
+function setTheme(id) {
+  state.page.theme = id;
+  state.page.background = '';
+  confettiBurst(THEMES[id].palette);
+  buildSwatches();
+  pushHistory();
+  refreshAll();
+}
+
+function buildSwatches() {
+  var box = document.getElementById('themeSwatches');
+  box.innerHTML = Object.keys(THEMES).map(function (k) {
+    var t = THEMES[k];
+    return '<button class="sw' + (state.page.theme === k ? ' active' : '') + '" data-theme="' + k + '" title="' + t.label + '">' +
+      '<i style="left:0;top:0;width:100%;height:100%;background:' + t.bg + '"></i>' +
+      '<i style="left:5px;bottom:5px;width:6px;height:6px;background:' + t.accent + ';border-radius:1px"></i>' +
+      '<i style="left:14px;bottom:5px;width:6px;height:6px;background:' + t.palette[1] + ';border-radius:1px"></i></button>';
+  }).join('');
+  box.querySelectorAll('.sw').forEach(function (b) {
+    b.addEventListener('click', function () { setTheme(b.getAttribute('data-theme')); });
+  });
+}
+
+function refreshAll() {
+  scene.update(state);
+  drawOverlay();
+  renderInspector();
+  buildSwatches();
+}
+
+/* ============================================================
+   预览
+   ============================================================ */
+var previewScreen = null;
+function openPreview() {
+  var layer = document.getElementById('previewLayer');
+  layer.classList.add('show');
+  var root = document.getElementById('previewRoot');
+  if (previewScreen) previewScreen.dispose();
+  previewScreen = createScreen(root, clone(state), { echarts: echarts, themes: THEMES, geo: { china: window.CHINA_GEO } });
+  fitPreview();
+}
+function fitPreview() {
+  var k = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+  var w = document.getElementById('previewWrap');
+  w.style.transform = 'scale(' + k + ')';
+  w.style.left = Math.round((window.innerWidth - 1920 * k) / 2) + 'px';
+  w.style.top = Math.round((window.innerHeight - 1080 * k) / 2) + 'px';
+}
+function closePreview() {
+  document.getElementById('previewLayer').classList.remove('show');
+  if (previewScreen) { previewScreen.dispose(); previewScreen = null; }
+}
+
+/* ============================================================
+   导出：单文件 HTML（同一份渲染器源码）
+   ============================================================ */
+function buildExportHTML(echartsSrc) {
+  var runtime = createScreen.toString();
+  var schemaStr = JSON.stringify(state).replace(/<\//g, '<\\/');
+  var themesStr = JSON.stringify(THEMES);
+  var geoStr = JSON.stringify(window.CHINA_GEO || null).replace(/<\//g, '<\\/');
+  var title = (state.page.title || '大屏');
+  var head = '<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1">\n<title>' + title + '</title>\n' +
+    '<style>html,body{margin:0;height:100%;overflow:hidden;background:#000}' +
+    '#stage{position:fixed;inset:0}#screen{position:absolute;left:0;top:0;transform-origin:0 0}</style>\n</head>\n<body>\n' +
+    '<div id="stage"><div id="screen"></div></div>\n' +
+    '<script>' + echartsSrc + '<\/script>\n<script>\n';
+  var tail = '\nvar SCHEMA = ' + schemaStr + ';\n' +
+    'var THEMES = ' + themesStr + ';\n' +
+    'var CHINA_GEO = ' + geoStr + ';\n' +
+    'var createScreen = ' + runtime + ';\n' +
+    'var el = document.getElementById("screen");\n' +
+    'var scene = createScreen(el, SCHEMA, { echarts: echarts, themes: THEMES, geo: { china: CHINA_GEO } });\n' +
+    'function fit(){var w=SCHEMA.page.width,h=SCHEMA.page.height,k=Math.min(window.innerWidth/w,window.innerHeight/h);' +
+    'el.style.transform="scale("+k+")";el.style.left=Math.round((window.innerWidth-w*k)/2)+"px";' +
+    'el.style.top=Math.round((window.innerHeight-h*k)/2)+"px";}\n' +
+    'fit();window.addEventListener("resize",function(){fit();scene.resize();});\n' +
+    '<\/script>\n</body>\n</html>';
+  return head + tail;
+}
+
+function download(name, text, mime) {
+  var blob = new Blob([text], { type: mime || 'text/html;charset=utf-8' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 1200);
+}
+
+function exportHTML() {
+  fetch('vendor/echarts.min.js').then(function (r) { return r.text(); }).then(function (src) {
+    var safe = src.replace(/<\/script/gi, '<\\/script');
+    download('screen.html', buildExportHTML(safe));
+    toast('已导出 screen.html · 双击即可打开，含完整 ECharts 运行时');
+  }).catch(function () {
+    toast('本地读取 ECharts 失败，已改用 CDN 引用导出');
+    var html = buildExportHTML('').replace('<script><\/script>',
+      '<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"><\/script>');
+    download('screen.html', html);
+  });
+}
+
+/* ============================================================
+   导出：Vue / React 组件代码（示意）
+   ============================================================ */
+function genWidgetCode(kind) {
+  var c = getSel();
+  if (!c || c.type.indexOf('echarts.') !== 0) {
+    c = state.components.filter(function (x) { return x.type.indexOf('echarts.') === 0; })[0];
+  }
+  if (!c) return '// 当前画布没有 ECharts 组件';
+  var option = scene.buildOption(c);
+  var optionStr = JSON.stringify(option, null, 2);
+  var compName = 'Widget_' + c.name.replace(/[^\w\u4e00-\u9fa5]/g, '') + '_' + c.id;
+  var rect = c.rect;
+
+  if (kind === 'vue') {
+    return '<template>\n  <div ref="el" class="sf-widget" />\n</template>\n\n' +
+      '<script setup lang="ts">\n' +
+      "import * as echarts from 'echarts'\n" +
+      "import { onMounted, onBeforeUnmount, ref } from 'vue'\n\n" +
+      '// ' + c.name + ' · ' + rect.w + ' × ' + rect.h + '\n' +
+      'const el = ref<HTMLDivElement>()\nlet chart: echarts.ECharts | null = null\n\n' +
+      'const option = ' + optionStr + '\n\n' +
+      'onMounted(() => {\n  chart = echarts.init(el.value!)\n  chart.setOption(option)\n  window.addEventListener("resize", onResize)\n})\n\n' +
+      'const onResize = () => chart?.resize()\n\n' +
+      'onBeforeUnmount(() => {\n  window.removeEventListener("resize", onResize)\n  chart?.dispose()\n})\n' +
+      '<\/script>\n\n<style scoped>\n.sf-widget { width: 100%; height: 100%; }\n</style>\n';
+  }
+
+  return "import { useEffect, useRef } from 'react'\nimport * as echarts from 'echarts'\n\n" +
+    '// ' + c.name + ' · ' + rect.w + ' × ' + rect.h + '\n' +
+    'const option = ' + optionStr + '\n\n' +
+    'export default function ' + compName + '() {\n' +
+    '  const el = useRef<HTMLDivElement>(null)\n\n' +
+    '  useEffect(() => {\n' +
+    '    const chart = echarts.init(el.current!)\n' +
+    '    chart.setOption(option)\n' +
+    '    const onResize = () => chart.resize()\n' +
+    '    window.addEventListener("resize", onResize)\n' +
+    '    return () => {\n      window.removeEventListener("resize", onResize)\n      chart.dispose()\n    }\n' +
+    '  }, [])\n\n' +
+    '  return <div ref={el} style={{ width: "100%", height: "100%" }} />\n}\n';
+}
+
+function openCode(kind) {
+  var code = genWidgetCode(kind);
+  document.getElementById('modalTitle').textContent =
+    (kind === 'vue' ? 'Vue 3 单文件组件' : 'React 组件') + ' · 导出示意（每个图表一个文件，option 为字面量）';
+  document.getElementById('modalCode').textContent = code;
+  document.getElementById('modal').classList.add('show');
+  document.getElementById('modalCopy').onclick = function () {
+    navigator.clipboard.writeText(code).then(function () { toast('已复制到剪贴板'); });
+  };
+}
+
+/* ============================================================
+   全局事件
+   ============================================================ */
+var toastTimer = null;
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { toastEl.classList.remove('show'); }, 2600);
+}
+
+window.addEventListener('keydown', function (e) {
+  var tag = (e.target.tagName || '').toLowerCase();
+  var typing = tag === 'input' || tag === 'textarea' || tag === 'select';
+  if (e.key === 'Escape') {
+    if (document.getElementById('modal').classList.contains('show')) {
+      document.getElementById('modal').classList.remove('show');
+      return;
+    }
+    if (document.getElementById('previewLayer').classList.contains('show')) closePreview();
+    return;
+  }
+  if (typing) return;
+  var c = getSel();
+
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    e.shiftKey ? redo() : undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+    e.preventDefault();
+    if (c) layerAction(c, 'dup');
+    return;
+  }
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (c) { e.preventDefault(); layerAction(c, 'del'); }
+    return;
+  }
+  if (e.key.indexOf('Arrow') === 0 && c) {
+    e.preventDefault();
+    var step = e.shiftKey ? 10 : 1;
+    if (e.key === 'ArrowLeft') c.rect.x -= step;
+    if (e.key === 'ArrowRight') c.rect.x += step;
+    if (e.key === 'ArrowUp') c.rect.y -= step;
+    if (e.key === 'ArrowDown') c.rect.y += step;
+    scene.updateLayout(state);
+    drawOverlay();
+    syncRectInputs();
+    pushHistory();
+  }
+});
+
+document.getElementById('btnUndo').addEventListener('click', undo);
+document.getElementById('btnRedo').addEventListener('click', redo);
+document.getElementById('btnPreview').addEventListener('click', openPreview);
+document.getElementById('exitPreview').addEventListener('click', closePreview);
+document.getElementById('btnExport').addEventListener('click', exportHTML);
+document.getElementById('btnVue').addEventListener('click', function () { openCode('vue'); });
+document.getElementById('btnReact').addEventListener('click', function () { openCode('react'); });
+document.getElementById('modalClose').addEventListener('click', function () {
+  document.getElementById('modal').classList.remove('show');
+});
+document.getElementById('modal').addEventListener('click', function (e) {
+  if (e.target.id === 'modal') document.getElementById('modal').classList.remove('show');
+});
+
+window.addEventListener('resize', function () {
+  fitStage();
+  scene.resize();
+  if (previewScreen) fitPreview();
+});
+
+/* ============================================================
+   启动
+   ============================================================ */
+buildPalette();
+buildSwatches();
+fitStage();
+pushHistory();
+refreshAll();
+setTimeout(fitStage, 60);
+</script>
+</body>
+</html>
