@@ -71,7 +71,28 @@ https://<你的用户名>.github.io/<仓库名>/
 
 > GitHub Pages 项目页部署在 `/<仓库名>/` 子路径下。工作流会自动把仓库名注入 `SF_BASE` 环境变量、由 `vite.config.ts` 读取作为部署 base，避免 JS/CSS 资源 404；本地开发默认 `/`，无需任何配置。
 
-**其他平台**：Vercel / Netlify 无需任何配置文件，导入仓库后构建命令 `npm run build`、产物目录 `dist` 即可（它们部署在根域名，无子路径问题）。
+**Cloudflare Pages（推荐，缓存策略更好）**：GitHub Pages 对所有资源强制 `Cache-Control: max-age=600`（10 分钟），意味着用户每次回访都要重新下载 1MB 的 ECharts——这是它不支持自定义响应头导致的，改代码解决不了。迁到 Cloudflare Pages 后 `public/_headers` 会生效：
+
+```
+/assets/*        → Cache-Control: public, max-age=31536000, immutable   # 带 hash，永久缓存
+/index.html      → Cache-Control: no-cache                              # 发版立即生效
+```
+
+步骤：Cloudflare Dashboard → Workers & Pages → Create → Pages → 连接 GitHub 仓库，构建命令 `npm run build`、输出目录 `dist`，其余默认。Netlify 同样识别 `_headers` 文件。
+
+**Vercel**：导入仓库后构建命令 `npm run build`、产物目录 `dist`，部署在根域名，无子路径问题。
+
+## 首屏性能
+
+线上 Lighthouse（移动端 4× CPU 降速 + 慢速 4G）优化的几个关键点，都在代码里：
+
+| 手段 | 位置 | 效果 |
+|---|---|---|
+| 骨架屏（`#boot`，内联在 HTML） | `index.html` + `src/main.tsx` | FCP 3.8s → **0.7s**，首屏不再白屏（限速实测 24.9s → 0.7s） |
+| 关键 CSS 内联 | `index.html` + `vite.config.ts` 的 `inlineCss` 插件 | 去掉一个渲染阻塞 RTT；构建时自动把 `<link rel=stylesheet>` 换成 `<style>` |
+| 入口按需加载导出模块 | `src/editor/App.tsx` 动态 `import()` | 首屏 JS 2.58MB → 237KB（导出用到的 1.4MB 点按钮才下载） |
+| ECharts 独立 vendor chunk | `vite.config.ts` `manualChunks` | 业务代码更新时用户不用重下 1MB 图表库 |
+| 依赖预构建 + 源码预热 | `vite.config.ts` `optimizeDeps` / `warmup` | 本地 `npm run dev` 首开不再触发整页 reload（5.1s → 2.6s） |
 
 
 ## 已实现能力

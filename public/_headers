@@ -1,0 +1,19 @@
+# ============================================================
+# 响应头配置（Cloudflare Pages / Netlify 通用，放在 public/ 下会被复制到 dist 根目录）
+#
+# GitHub Pages 不支持自定义响应头，会自动忽略本文件；它的默认值是
+# Cache-Control: max-age=600（10 分钟），导致每次回访都重新下载 1MB 的 echarts。
+# 迁到 Cloudflare Pages 后，下面这条让带 hash 的资源真正 immutable 缓存一年。
+# ============================================================
+
+# 带内容 hash 的构建产物：永久缓存。hash 变了 URL 就变，不存在过期问题
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# 入口 HTML 绝不缓存，保证发版后能立刻拿到新的资源引用
+/index.html
+  Cache-Control: no-cache
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
