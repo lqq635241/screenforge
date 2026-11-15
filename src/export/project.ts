@@ -191,7 +191,8 @@ function vueChart(c: ComponentItem, t: ThemeToken): string {
 </template>
 
 <script setup lang="ts">
-import * as echarts from 'echarts'
+// echarts 走按需注册出口（src/lib/echarts.ts），产物更小
+import echarts from '../lib/echarts'
 import { onMounted, onBeforeUnmount, ref } from 'vue'
 
 const el = ref<HTMLDivElement>()
@@ -449,7 +450,8 @@ function reactChart(c: ComponentItem, t: ThemeToken): string {
   const title = String((c.props || {}).title || c.name)
   return `// ${c.name} · ${c.rect.w} × ${c.rect.h} · ScreenForge 导出
 import { useEffect, useRef } from 'react'
-import * as echarts from 'echarts'
+// echarts 走按需注册出口（src/lib/echarts.ts），产物更小
+import echarts from '../lib/echarts'
 
 // 配置项固化为字面量：改样式直接改这里；接接口请替换数据后重新 setOption
 const option = ${optionStr}
@@ -715,6 +717,37 @@ ${usages}
 
 /* ============================ 工程骨架文件 ============================ */
 
+/**
+ * 生成导出工程里的 src/lib/echarts.ts —— ECharts 按需注册的唯一出口。
+ * 与编辑器侧 src/core/echarts-setup.ts 保持一致的注册集；
+ * 开发者后续在导出工程里新增图表类型时，在这里补一行注册即可。
+ */
+function echartsSetupCode(): string {
+  return `/**
+ * ECharts 按需注册 —— 全工程唯一的 echarts 出口
+ * 只注册本项目用到的图表 / 组件 / 渲染器，构建产物比全量引入小一半以上。
+ * 新增图表类型时在这里补注册即可（列表见 echarts/charts、echarts/components）。
+ */
+import * as echarts from 'echarts/core'
+import {
+  LineChart, BarChart, PieChart, GaugeChart, MapChart, RadarChart,
+} from 'echarts/charts'
+import {
+  GridComponent, TooltipComponent, LegendComponent,
+  VisualMapComponent, AxisPointerComponent,
+} from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
+
+echarts.use([
+  LineChart, BarChart, PieChart, GaugeChart, MapChart, RadarChart,
+  GridComponent, TooltipComponent, LegendComponent, VisualMapComponent,
+  AxisPointerComponent, CanvasRenderer,
+])
+
+export default echarts
+`
+}
+
 function vuePkg(title: string, usesMap: boolean): string {
   return JSON.stringify({
     name: 'screenforge-screen',
@@ -755,6 +788,7 @@ npm run build    # 生产构建
 - \`src/App.vue\` 主页面：1920×1080 设计稿 + 等比缩放，绝对定位编排所有子组件
 - \`src/components/Widget*.vue\` 每个大屏组件一个文件，配置项固化为字面量
 - \`src/screen.css\` 全局样式，主题色已固化为字面量（改色直接替换值）
+- \`src/lib/echarts.ts\` ECharts 按需注册出口（新增图表类型在这里补注册）
 - \`src/main.ts\` 入口：注册 ECharts 与中国地图 geoJSON
 
 ## 改数据
@@ -781,6 +815,7 @@ npm run build    # 生产构建
 - \`src/App.jsx\` 主页面：1920×1080 设计稿 + 等比缩放，绝对定位编排所有子组件
 - \`src/components/Widget*.jsx\` 每个大屏组件一个文件，配置项固化为字面量
 - \`src/screen.css\` 全局样式，主题色已固化为字面量（改色直接替换值）
+- \`src/lib/echarts.ts\` ECharts 按需注册出口（新增图表类型在这里补注册）
 - \`src/main.jsx\` 入口：注册中国地图 geoJSON
 
 ## 改数据
@@ -798,6 +833,7 @@ export function projectFiles(
   kind: 'vue' | 'react',
   schema: ScreenSchema,
   themes: Record<string, ThemeToken>,
+  chinaGeoJson?: string,
 ): { path: string; content: string }[] {
   const t = themes[schema.page.theme] || themes.custom
   // 可见组件按 schema 顺序编号
@@ -805,7 +841,8 @@ export function projectFiles(
   const names: Record<string, string> = {}
   comps.forEach((c, i) => { names[c.id] = compBase(c, i) })
   const usesMap = comps.some((c) => c.type === 'echarts.map')
-  const chinaJson = usesMap ? JSON.stringify(chinaGeoData) : ''
+  // geoJSON 全文由调用方（exportProject）按需 fetch 注入，编辑器 bundle 不再静态携带
+  const chinaJson = usesMap ? (chinaGeoJson || '') : ''
   const title = schema.page.title || '大屏'
   const files: { path: string; content: string }[] = []
 
@@ -816,6 +853,7 @@ export function projectFiles(
     files.push({ path: 'index.html', content: `<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>${title}</title>\n</head>\n<body>\n  <div id="app"></div>\n  <script type="module" src="/src/main.ts"><\/script>\n</body>\n</html>\n` })
     files.push({ path: 'README.md', content: vueReadme(title) })
     files.push({ path: 'src/main.ts', content: mainTs(usesMap) })
+    files.push({ path: 'src/lib/echarts.ts', content: echartsSetupCode() })
     files.push({ path: 'src/screen.css', content: screenCss(t, schema) })
     files.push({ path: 'src/App.vue', content: vueApp(comps, names, t, schema) })
     comps.forEach((c) => files.push({ path: `src/components/${names[c.id]}.vue`, content: vueComp(c, t) }))
@@ -826,6 +864,7 @@ export function projectFiles(
     files.push({ path: 'index.html', content: `<!DOCTYPE html>\n<html lang="zh-CN">\n<head>\n  <meta charset="UTF-8" />\n  <meta name="viewport" content="width=device-width, initial-scale=1.0" />\n  <title>${title}</title>\n</head>\n<body>\n  <div id="root"></div>\n  <script type="module" src="/src/main.jsx"><\/script>\n</body>\n</html>\n` })
     files.push({ path: 'README.md', content: reactReadme(title) })
     files.push({ path: 'src/main.jsx', content: mainJsx(usesMap) })
+    files.push({ path: 'src/lib/echarts.ts', content: echartsSetupCode() })
     files.push({ path: 'src/screen.css', content: screenCss(t, schema) })
     files.push({ path: 'src/App.jsx', content: reactApp(comps, names, schema) })
     comps.forEach((c) => files.push({ path: `src/components/${names[c.id]}.jsx`, content: reactComp(c, t) }))
@@ -834,12 +873,12 @@ export function projectFiles(
   return files
 }
 
-/** Vue 工程入口：注册地图（仅用到地图时） + 引入全局样式 */
+/** Vue 工程入口：按需注册出口 + 注册地图（仅用到地图时） + 引入全局样式 */
 function mainTs(usesMap: boolean): string {
   const reg = usesMap
     ? `import chinaGeo from './assets/china.json'\n// 中国地图 geoJSON 注册（ECharts 5 不再内置地图数据）\necharts.registerMap('china', chinaGeo)\n`
     : ''
-  return `import { createApp } from 'vue'\nimport * as echarts from 'echarts'\nimport App from './App.vue'\nimport './screen.css'\n\n${reg}\ncreateApp(App).mount('#app')\n`
+  return `import { createApp } from 'vue'\nimport echarts from './lib/echarts'\nimport App from './App.vue'\nimport './screen.css'\n\n${reg}\ncreateApp(App).mount('#app')\n`
 }
 
 /** React 工程入口 */
@@ -847,11 +886,8 @@ function mainJsx(usesMap: boolean): string {
   const reg = usesMap
     ? `import chinaGeo from './assets/china.json'\n// 中国地图 geoJSON 注册（ECharts 5 不再内置地图数据）\necharts.registerMap('china', chinaGeo)\n`
     : ''
-  return `import React from 'react'\nimport { createRoot } from 'react-dom/client'\nimport * as echarts from 'echarts'\nimport App from './App'\nimport './screen.css'\n\n${reg}\ncreateRoot(document.getElementById('root')).render(<App />)\n`
+  return `import React from 'react'\nimport { createRoot } from 'react-dom/client'\nimport echarts from './lib/echarts'\nimport App from './App'\nimport './screen.css'\n\n${reg}\ncreateRoot(document.getElementById('root')).render(<App />)\n`
 }
-
-// china.json 内容延迟读取（构建时静态打包）
-import chinaGeoData from '../core/assets/china.json'
 
 /**
  * 导出工程 zip 并下载。
@@ -861,7 +897,18 @@ export async function exportProject(
   schema: ScreenSchema,
   themes: Record<string, ThemeToken>,
 ): Promise<void> {
-  const files = projectFiles(kind, schema, themes)
+  // 中国地图 geoJSON 按需获取（编辑器 bundle 不再静态携带这 60KB），
+  // 失败时降级为空内容（仅地图组件会空，其余文件正常导出）
+  const usesMap = schema.components.some((c) => !c.hidden && c.type === 'echarts.map')
+  let chinaGeoJson = ''
+  if (usesMap) {
+    try {
+      chinaGeoJson = await (await fetch('geo/china.json')).text()
+    } catch (err) {
+      console.warn('[ScreenForge] 地图数据获取失败，导出工程中的 china.json 为空', err)
+    }
+  }
+  const files = projectFiles(kind, schema, themes, chinaGeoJson)
   const zip = new JSZip()
   const root = kind === 'vue' ? 'screen-vue/' : 'screen-react/'
   files.forEach((f) => zip.file(root + f.path, f.content))

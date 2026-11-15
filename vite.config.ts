@@ -53,12 +53,27 @@ export default defineConfig({
   plugins: [react(), inlineCss()],
 
   /**
+   * 地图 geoJSON 加载方式开关（P1）：
+   * false = 编辑器构建走 fetch('geo/china.json')（public 目录，懒加载，
+   *         60KB 不进首屏 chunk）；
+   * true  = 仅 build:runtime（esbuild 打包导出 HTML 的 IIFE）时由命令行
+   *         --define 注入，走动态 import 分支，JSON 被内联 → 单文件离线可用。
+   */
+  define: { SF_EMBED_GEO: 'false' },
+
+  /**
    * 首开性能：
-   * - include 把 echarts/jszip/react 预声明为依赖，dev server 启动时立即预构建，
-   *   否则首次打开页面时才发现依赖 → 现场预构建 → 触发整页 reload（实测冷启动 5s+ 且打开两次）。
+   * - include 把 echarts 子路径/jszip/react 预声明为依赖，dev server 启动时
+   *   立即预构建，否则首次打开页面时才发现依赖 → 现场预构建 → 触发整页 reload
+   *   （实测冷启动 5s+ 且打开两次）。echarts 改为按需入口的子路径（P1）。
    * - warmup 在服务启动后台预热核心源码模块的转换，首次请求无需现场 transform。
    */
-  optimizeDeps: { include: ['echarts', 'jszip', 'react', 'react-dom', 'react-dom/client'] },
+  optimizeDeps: {
+    include: [
+      'echarts/core', 'echarts/charts', 'echarts/components', 'echarts/renderers',
+      'jszip', 'react', 'react-dom', 'react-dom/client',
+    ],
+  },
   server: {
     port: 5173,
     warmup: { clientFiles: ['./src/core/**/*.ts', './src/editor/**/*.tsx', './src/index.css'] },
@@ -68,9 +83,11 @@ export default defineConfig({
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
       output: {
-        // echarts 拆独立 vendor chunk：版本不变时浏览器可长期缓存，
-        // 业务代码更新后用户无需重新下载 ~1MB 的图表库
-        manualChunks: { echarts: ['echarts'] },
+        // echarts（按需入口）拆独立 vendor chunk：版本不变时浏览器可长期缓存，
+        // 业务代码更新后用户无需重新下载图表库
+        manualChunks(id: string) {
+          if (id.includes('node_modules/echarts')) return 'echarts'
+        },
       },
     },
   },

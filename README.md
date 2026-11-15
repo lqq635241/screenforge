@@ -91,7 +91,9 @@ https://<你的用户名>.github.io/<仓库名>/
 | 骨架屏（`#boot`，内联在 HTML） | `index.html` + `src/main.tsx` | FCP 3.8s → **0.7s**，首屏不再白屏（限速实测 24.9s → 0.7s） |
 | 关键 CSS 内联 | `index.html` + `vite.config.ts` 的 `inlineCss` 插件 | 去掉一个渲染阻塞 RTT；构建时自动把 `<link rel=stylesheet>` 换成 `<style>` |
 | 入口按需加载导出模块 | `src/editor/App.tsx` 动态 `import()` | 首屏 JS 2.58MB → 237KB（导出用到的 1.4MB 点按钮才下载） |
-| ECharts 独立 vendor chunk | `vite.config.ts` `manualChunks` | 业务代码更新时用户不用重下 1MB 图表库 |
+| **ECharts 按需注册** | `src/core/echarts-setup.ts`（全项目唯一 echarts 出口） | echarts vendor chunk 626KB（gzip 209KB）；导出 HTML 1.12MB → **751KB**（-33%）。导出的 Vue/React 工程同样自带按需注册的 `src/lib/echarts.ts` |
+| **图表分帧初始化** | `src/core/renderer.ts` 的 rAF 初始化队列 | 卡片外壳先上屏，图表每帧只 init 一个，消除多图表同帧数百毫秒的长任务 |
+| **地图 geoJSON 懒加载** | `public/geo/china.json` + `option.ts` 异步注册 | 60KB 地图数据移出首屏 chunk，首次用到地图才 fetch；导出 HTML 仍内联（单文件离线可用） |
 | 依赖预构建 + 源码预热 | `vite.config.ts` `optimizeDeps` / `warmup` | 本地 `npm run dev` 首开不再触发整页 reload（5.1s → 2.6s） |
 
 

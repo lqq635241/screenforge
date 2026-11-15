@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "npm run build:runtime && vite",
     "build": "npm run build:runtime && vite build",
-    "build:runtime": "esbuild src/core/runtime-entry.ts --bundle --minify --format=iife --global-name=ScreenForgeCore --target=es2018 --outfile=src/export/runtime.iife.js",
+    "build:runtime": "esbuild src/core/runtime-entry.ts --bundle --minify --format=iife --global-name=ScreenForgeCore --target=es2018 --define:SF_EMBED_GEO=true --outfile=src/export/runtime.iife.js",
     "preview": "vite preview"
   },
   "dependencies": {

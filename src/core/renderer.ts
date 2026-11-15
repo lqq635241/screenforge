@@ -15,7 +15,7 @@
  *   - 滚动列表与时钟由内部定时器驱动，dispose 时统一清理。
  */
 
-import * as echarts from 'echarts'
+import { echarts, type ECharts } from './echarts-setup'
 import type { ComponentItem, ScreenHandle, ScreenSchema } from './schema'
 export type { ScreenHandle } from './schema'
 import type { ThemeToken } from './themes'
@@ -27,6 +27,9 @@ const CHART_TYPES: Record<string, boolean> = {
   'echarts.line': true, 'echarts.bar': true, 'echarts.pie': true,
   'echarts.gauge': true, 'echarts.map': true, 'echarts.radar': true,
 }
+
+/** 图表宿主 DOM（外壳内的留白层，echarts.init 挂在这上面） */
+const CHART_SHELL = '<div class="sf-chart" style="position:absolute;inset:0"></div>'
 
 /** HTML 内联 style 属性用的单引号版字体栈（双引号会截断 style 属性，原型踩过） */
 const FONTX = FONT.replace(/"/g, "'")
@@ -50,7 +53,87 @@ export function createScreen(
   opts?: { themes?: Record<string, ThemeToken> },
 ): ScreenHandle {
   const themesMap = opts?.themes || THEMES
-  const nodes: Record<string, { el: HTMLDivElement; chart: echarts.ECharts | null; type: string | null; theme: string | null }> = {}
+  /** 节点缓存：id → DOM / 图表实例 / 渲染状态 */
+  interface NodeRec {
+    el: HTMLDivElement
+    chart: ECharts | null
+    type: string | null
+    theme: string | null
+    /** 图表在「分帧初始化」队列中，还没真正 echarts.init */
+    pending: boolean
+    /** 排队期间组件的最新状态（出队时用它 init + setOption，拖拽/改配置不丢） */
+    latest: ComponentItem | null
+    /** 节点已被删除或整体 dispose，出队时直接跳过 */
+    dead: boolean
+    /** 每次调度/取消排队时自增：让「await 地图数据中」的旧任务自动失效，防双初始化 */
+    serial: number
+  }
+  const nodes: Record<string, NodeRec> = {}
+
+  /* ---- 图表分帧初始化队列（P1 性能优化） ----
+   * 之前 update() 在同一帧内同步 init + setOption 全部图表，
+   * 5 个图表 ≈ 数百毫秒的长任务：骨架淡出后仍白屏、交互掉帧。
+   * 现在：卡片外壳（标题/边框/四角）立即上屏保证首绘完整，
+   * rAF 队列每帧只 init 一个图表，主线程在帧与帧之间可以喘口气。
+   */
+  const initQueue: NodeRec[] = []
+  let pumping = false
+
+  /** 取消排队并使在途初始化任务失效（类型切换重建 / 组件删除 / dispose 时调用） */
+  function unqueue(rec: NodeRec): void {
+    const i = initQueue.indexOf(rec)
+    if (i >= 0) initQueue.splice(i, 1)
+    rec.pending = false
+    rec.latest = null
+    rec.serial++
+  }
+
+  /** 初始化一个图表（地图组件先等 geoJSON 懒加载完成） */
+  async function initChart(rec: NodeRec): Promise<void> {
+    const s = rec.serial
+    if (rec.type === 'echarts.map') {
+      try { await ensureChinaMap() } catch { return } // 加载失败：下次配置变更时重试
+    }
+    // 等待期间节点被删除 / 取消排队 / 重新调度 → 本次作废
+    if (rec.dead || !rec.pending || rec.serial !== s) return
+    const c = rec.latest
+    const host = rec.el.querySelector('.sf-chart') as HTMLElement | null
+    if (!c || !host) return
+    // 隐藏组件（display:none）的宿主尺寸为 0：此刻 init 只会得到一块 0×0 canvas
+    // 并打 "Can't get dom width or height" 警告。这里保持 pending 不变直接返回，
+    // 等组件被显示时由下一次 update → renderComp 的 pending 分支重新入队（见下方 A 处）。
+    if (!host.clientWidth || !host.clientHeight) return
+    rec.chart = echarts.init(host)
+    rec.chart.setOption(buildOption(c, tok()) as never, true)
+    rec.pending = false
+    rec.latest = null
+  }
+
+  /** rAF 泵：每帧出队一个图表初始化 */
+  function pump(): void {
+    const rec = initQueue.shift()
+    if (rec && !rec.dead) void initChart(rec)
+    if (initQueue.length) requestAnimationFrame(pump)
+    else pumping = false
+  }
+
+  /** 图表入队（已在队列则只刷新最新状态；不在则入队并确保泵在跑） */
+  function scheduleChart(rec: NodeRec, c: ComponentItem): void {
+    rec.serial++
+    rec.pending = true
+    rec.latest = c
+    if (!initQueue.includes(rec)) initQueue.push(rec)
+    if (!pumping) {
+      pumping = true
+      if (typeof requestAnimationFrame !== 'undefined') {
+        requestAnimationFrame(pump)
+      } else {
+        // 无 rAF 的环境（理论不存在）：同步逐个初始化兜底
+        while (initQueue.length) { const r = initQueue.shift(); if (r && !r.dead) void initChart(r) }
+        pumping = false
+      }
+    }
+  }
   let timer: number | null = null   // 时钟
   let stimer: number | null = null  // 滚动列表
 
@@ -194,7 +277,7 @@ export function createScreen(
       el.style.position = 'absolute'
       el.style.boxSizing = 'border-box'
       root.appendChild(el)
-      rec = { el, chart: null, type: null, theme: null }
+      rec = { el, chart: null, type: null, theme: null, pending: false, latest: null, dead: false, serial: 0 }
       nodes[c.id] = rec
     }
     const node = rec.el
@@ -205,20 +288,34 @@ export function createScreen(
     const isChart = !!CHART_TYPES[c.type]
     if (rec.type !== c.type || rec.theme !== schema.page.theme) {
       if (rec.chart) { rec.chart.dispose(); rec.chart = null }
+      unqueue(rec) // 类型/主题变化 → 外壳重建，排队中的初始化作废
       node.innerHTML = ''
       rec.type = c.type
       rec.theme = schema.page.theme
     }
 
     if (isChart) {
-      if (!rec.chart || !node.querySelector('.sf-chart')) {
-        node.innerHTML = card(c, t, '<div class="sf-chart" style="position:absolute;inset:0"></div>')
-        rec.chart = echarts.init(node.querySelector('.sf-chart') as HTMLElement)
+      if (rec.pending) {
+        // 图表还在分帧队列中：只刷新出队时要用的最新配置（外壳已在上次调度时渲染）
+        scheduleChart(rec, c)
+        return
+      }
+      if (!rec.chart) {
+        // 首次出现：外壳立即上屏（标题/边框可见），图表本体走 rAF 队列分帧初始化
+        node.innerHTML = card(c, t, CHART_SHELL)
+        scheduleChart(rec, c)
       } else {
         const tt = node.querySelector('.sf-card-title')
         if (tt) tt.textContent = (c.props.title as string) || c.name
+        // 尺寸校验：从隐藏切回可见时，外层尺寸变了但没有任何 updateLayout 调用，
+        // canvas 会停在旧尺寸（甚至停在初始化时的 0×0）。这里对齐一次再画。
+        // 命中条件很少，读 clientWidth 与前面的写样式同属一个任务，只触发一次 reflow。
+        const host = node.querySelector('.sf-chart') as HTMLElement | null
+        if (host && (rec.chart.getWidth() !== host.clientWidth || rec.chart.getHeight() !== host.clientHeight)) {
+          rec.chart.resize()
+        }
+        rec.chart.setOption(buildOption(c, t) as never, true)
       }
-      rec.chart.setOption(buildOption(c, t) as never, true)
     } else {
       node.innerHTML = domHTML(c, t)
     }
@@ -268,7 +365,9 @@ export function createScreen(
     Object.keys(nodes).forEach((id) => {
       if (alive[id]) return
       const rec = nodes[id]
+      rec.dead = true
       if (rec.chart) rec.chart.dispose()
+      unqueue(rec)
       rec.el.parentNode?.removeChild(rec.el)
       delete nodes[id]
     })
@@ -294,13 +393,18 @@ export function createScreen(
   function dispose(): void {
     if (timer) clearInterval(timer)
     if (stimer) clearInterval(stimer)
-    Object.keys(nodes).forEach((id) => nodes[id].chart?.dispose())
+    Object.keys(nodes).forEach((id) => {
+      const rec = nodes[id]
+      rec.dead = true
+      if (rec.chart) rec.chart.dispose()
+      unqueue(rec)
+    })
+    initQueue.splice(0)
     for (const id of Object.keys(nodes)) delete nodes[id]
     root.innerHTML = ''
   }
 
-  // 地图在首帧渲染前确保注册（组件里也兜底调用了 ensureChinaMap）
-  ensureChinaMap()
+  // 地图 geoJSON 不再预热：ensureChinaMap 由图表初始化队列在遇到地图组件时按需调用（懒加载）
 
   if (typeof window !== 'undefined') {
     timer = window.setInterval(tick, 1000)

@@ -8,8 +8,7 @@
  * - rawOption 逃生舱最后深度 merge，保证用户能覆盖任何字段。
  */
 
-import * as echarts from 'echarts'
-import chinaGeo from './assets/china.json'
+import { echarts } from './echarts-setup'
 import type { ComponentItem } from './schema'
 import { al, type ThemeToken } from './themes'
 
@@ -17,17 +16,45 @@ import { al, type ThemeToken } from './themes'
 export const FONT = 'system-ui,-apple-system,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif'
 
 /* ------------------------------------------------------------
- * 中国地图 geoJSON 懒注册
- * ECharts 5 不再内置地图数据；geoJSON 随包分发（assets/china.json），
- * 首次遇到地图组件时注册一次。runtime.iife.js 会把这份 JSON 一起打进
- * 导出的单文件 HTML，因此导出物天然可用，无需额外配置。
+ * 中国地图 geoJSON 懒加载注册（P1 性能优化）
+ * ------------------------------------------------------------
+ * geoJSON 约 60KB，之前静态 import 会被打进编辑器首屏 chunk。
+ * 现在改为「首次用到地图时才加载」：
+ *   - 编辑器构建：fetch 相对路径 geo/china.json（public 目录，跟随
+ *     vite base / GitHub Pages 子路径，天然正确）；
+ *   - 导出单文件 HTML：esbuild 打包 runtime 时 SF_EMBED_GEO=true（见
+ *     package.json build:runtime 的 --define），走动态 import 分支，
+ *     esbuild 会把 JSON 内联进 IIFE —— 单文件 HTML 离线可用性不变；
+ *   - 导出 Vue/React 工程：project.ts 在导出时 fetch 该文件写入
+ *     src/assets/china.json，与生成代码同步注册。
+ * 加载失败时清空 mapLoading 以便下次重试。
  * ---------------------------------------------------------- */
+declare const SF_EMBED_GEO: boolean | undefined
+
 let mapRegistered = false
-export function ensureChinaMap(): void {
-  if (!mapRegistered) {
-    echarts.registerMap('china', chinaGeo as never)
-    mapRegistered = true
+let mapLoading: Promise<void> | null = null
+
+/** 确保中国地图已注册；未注册时开始异步加载并返回同一份 Promise */
+export function ensureChinaMap(): Promise<void> {
+  if (mapRegistered) return Promise.resolve()
+  if (!mapLoading) {
+    const load = SF_EMBED_GEO
+      ? import('./assets/china.json').then((m) => m.default)
+      : fetch('geo/china.json').then((r) => {
+          if (!r.ok) throw new Error('加载地图数据失败：' + r.status)
+          return r.json()
+        })
+    mapLoading = Promise.resolve(load)
+      .then((geo) => {
+        echarts.registerMap('china', geo as never)
+        mapRegistered = true
+      })
+      .catch((err) => {
+        mapLoading = null // 允许下次重试
+        throw err
+      })
   }
+  return mapLoading
 }
 
 /** 深度 merge：b 覆盖 a，数组与标量直接替换（用于 rawOption） */
@@ -142,8 +169,8 @@ export function buildOption(c: ComponentItem, t: ThemeToken): Record<string, unk
       }],
     }
   } else if (c.type === 'echarts.map') {
-    /* ---- 中国地图：先保证 geoJSON 已注册 ---- */
-    ensureChinaMap()
+    /* ---- 中国地图：预热懒加载（真正等待在 renderer 的图表初始化队列里） ---- */
+    void ensureChinaMap()
     const mitems = (d.items as { name: string; value: number }[] || [])
     const maxv = Math.max(1, ...mitems.map((i) => i.value))
     o = {
