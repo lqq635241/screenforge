@@ -11,6 +11,7 @@
 
 import type { ScreenSchema } from '../core/schema'
 import type { ThemeToken } from '../core/themes'
+import { pageBackground } from '../core/fit'
 // 构建产物以纯文本引入（?raw），随编辑器一起打包，导出时直接内联
 import runtimeSrc from './runtime.iife.js?raw'
 
@@ -33,6 +34,8 @@ export function buildExportHtml(schema: ScreenSchema, themes: Record<string, The
   const themesStr = JSON.stringify(themes)
   const runtime = runtimeSrc.replace(/<\/script/gi, '<\\/script')
   const title = schema.page.title || '大屏'
+  // 页面背景：画在铺满窗口的背景层上，内容层保持透明
+  const bg = pageBackground(schema, themes[schema.page.theme] || themes.custom)
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -42,8 +45,10 @@ export function buildExportHtml(schema: ScreenSchema, themes: Record<string, The
 <title>${title}</title>
 <style>
   html,body{margin:0;height:100%;overflow:hidden;background:#000}
-  #stage{position:fixed;inset:0}
-  #screen{position:absolute;left:0;top:0;transform-origin:0 0}
+  /* 背景层：铺满窗口 */
+  #stage{position:fixed;inset:0;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat}
+  /* 内容层：铺满窗口，组件按百分比落位（见 runtime 里的 core/fit） */
+  #screen{position:absolute;inset:0;overflow:hidden;background:transparent}
 </style>
 </head>
 <body>
@@ -52,18 +57,18 @@ export function buildExportHtml(schema: ScreenSchema, themes: Record<string, The
 <script>
 var SCHEMA = ${schemaStr};
 var THEMES = ${themesStr};
+var BG = ${JSON.stringify(bg)};
+var stage = document.getElementById("stage");
 var el = document.getElementById("screen");
-var scene = ScreenForgeCore.createScreen(el, SCHEMA, { themes: THEMES });
-// 16:9 letterbox 等比缩放 + 居中
-function fit() {
-  var w = SCHEMA.page.width, h = SCHEMA.page.height;
-  var k = Math.min(window.innerWidth / w, window.innerHeight / h);
-  el.style.transform = "scale(" + k + ")";
-  el.style.left = Math.round((window.innerWidth - w * k) / 2) + "px";
-  el.style.top = Math.round((window.innerHeight - h * k) / 2) + "px";
-}
-fit();
-window.addEventListener("resize", function () { fit(); scene.resize(); });
+// 背景铺满（background 简写会重置 size/position/repeat，必须随后单独设一次）
+stage.style.background = BG;
+stage.style.backgroundSize = "cover";
+stage.style.backgroundPosition = "center";
+stage.style.backgroundRepeat = "no-repeat";
+// fill:true —— 每个组件的盒子按百分比铺满屏幕，盒子里的内容等比缩放（圆不变形）
+var scene = ScreenForgeCore.createScreen(el, SCHEMA, { themes: THEMES, fill: true, paintBackground: false });
+// 窗口尺寸变化：重算百分比布局 + 重排 + 图表 resize
+window.addEventListener("resize", function () { scene.resize(); });
 <\/script>
 </body>
 </html>`

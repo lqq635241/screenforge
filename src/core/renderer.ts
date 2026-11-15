@@ -21,6 +21,7 @@ export type { ScreenHandle } from './schema'
 import type { ThemeToken } from './themes'
 import { THEMES, al } from './themes'
 import { buildOption, ensureChinaMap, fmtNum, FONT } from './option'
+import { computeFill, pageBackground, type FillLayout } from './fit'
 
 /** 图表类物料：走 card() 卡片外壳 + ECharts 实例 */
 const CHART_TYPES: Record<string, boolean> = {
@@ -42,17 +43,27 @@ function esc(s: unknown): string {
 
 /**
  * 创建一个屏幕渲染实例。
- * @param root 挂载容器（绝对定位，尺寸 = 设计稿尺寸）
+ * @param root 挂载容器。fill=false 时它必须是设计稿尺寸的盒子（编辑器画布）；
+ *             fill=true 时它铺满父容器（预览 / 导出），组件按百分比落位。
  * @param schema 屏幕描述
  * @param opts.themes 主题表（编辑器传实时对象以支持自定义主题；
  *                    导出 HTML 的引导代码传序列化后的副本）
+ * @param opts.fill 是否按「百分比铺满屏幕」布局（默认 false = 设计稿绝对像素）
+ * @param opts.paintBackground 是否由渲染器画页面背景。默认 true（编辑器画布）；
+ *                    预览 / 导出传 false：背景画在外层全屏容器上，
+ *                    内容层保持透明，避免缩放后背景边缘露馅。
  */
 export function createScreen(
   root: HTMLElement,
   schema: ScreenSchema,
-  opts?: { themes?: Record<string, ThemeToken> },
+  opts?: { themes?: Record<string, ThemeToken>; fill?: boolean; paintBackground?: boolean },
 ): ScreenHandle {
   const themesMap = opts?.themes || THEMES
+  /** 铺满模式：组件盒子用百分比，内容层等比缩放 */
+  const fill = !!opts?.fill
+  const paintBackground = opts?.paintBackground !== false
+  /** 当前布局（每次 update / resize 重算） */
+  let lay: FillLayout | null = null
   /** 节点缓存：id → DOM / 图表实例 / 渲染状态 */
   interface NodeRec {
     el: HTMLDivElement
@@ -107,7 +118,10 @@ export function createScreen(
     // 先用 visible 筛掉隐藏组件，避免读取 clientWidth 触发强制同步布局。
     if (!rec.visible) return
     if (!host.clientWidth || !host.clientHeight) return
-    rec.chart = echarts.init(host)
+    // 铺满模式下内容层被 scale(k)：画布像素密度跟着放大，否则高分屏上会发虚
+    const k = fill && lay ? lay.place(c.rect).k : 1
+    const dpr = (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1) * (k > 0 ? k : 1)
+    rec.chart = echarts.init(host, undefined, { devicePixelRatio: Math.min(4, dpr) })
     rec.chart.setOption(buildOption(c, tok()) as never, true)
     rec.pending = false
     rec.latest = null
@@ -155,31 +169,40 @@ export function createScreen(
       `<i style="${s};right:0;bottom:0;border-right:2px solid ${t.accent};border-bottom:2px solid ${t.accent}"></i>`
   }
 
-  /** 图表类卡片外壳：面板 + 顶部光线 + 标题栏 */
+  /**
+   * 图表类卡片外壳：外框（背景 / 边框 / 四角 / 顶部光线）+ 内容层。
+   *
+   * 外框与内容层分开是为了「盒子铺满、内容等比」：
+   *   .sf-frame 铺满组件盒子（百分比尺寸，随屏幕拉伸），负责边框背景；
+   *   .sf-fit 是设计稿像素尺寸的内容层，铺满模式下按 k 等比缩放并居中，
+   *   于是饼图/仪表盘/雷达图的圆永远是正圆，文字也不会被拉长。
+   */
   function card(c: ComponentItem, t: ThemeToken, body: string): string {
     const p = c.props || {}
-    return `<div style="position:absolute;inset:0;background:${t.panel};border:1px solid ${t.panelBorder};border-radius:4px;overflow:hidden">` +
+    return `<div class="sf-frame" style="position:absolute;inset:0;background:${t.panel};border:1px solid ${t.panelBorder};border-radius:4px;overflow:hidden">` +
       `<i style="position:absolute;left:8%;right:8%;top:0;height:1px;background:linear-gradient(90deg,transparent,${al(t.accent, .9)},transparent);pointer-events:none"></i>` +
       `<i style="position:absolute;left:0;top:0;right:0;height:52px;background:linear-gradient(180deg,${al(t.accent, .06)},transparent);pointer-events:none"></i>` +
       corners(t) +
+      `<div class="sf-fit" style="position:absolute;left:0;top:0;width:100%;height:100%">` +
       `<div style="position:absolute;left:0;top:0;right:0;height:42px;display:flex;align-items:center;gap:8px;padding:0 14px">` +
       `<i style="display:block;width:3px;height:13px;background:${t.accent};box-shadow:0 0 6px ${al(t.accent, .8)}"></i>` +
       `<span class="sf-card-title" style="font:500 15px/1 ${FONTX};color:${t.text};letter-spacing:.5px">${esc(p.title || c.name)}</span></div>` +
-      `<div style="position:absolute;left:0;top:42px;right:0;bottom:0">${body}</div></div>`
+      `<div style="position:absolute;left:0;top:42px;right:0;bottom:0">${body}</div>` +
+      `</div></div>`
   }
 
   /** DOM 类组件（数字翻牌 / 排行榜 / 滚动列表 / 标题 / 时钟） */
   function domHTML(c: ComponentItem, t: ThemeToken): string {
     const p = c.props || {}
     const d = (c.data || {}) as Record<string, unknown>
-    const shell = `position:absolute;inset:0;background:${t.panel};border:1px solid ${t.panelBorder};border-radius:4px;overflow:hidden;font-family:${FONTX}`
+    // 背景 / 边框 / 四角由外层 .sf-frame 提供（铺满盒子），这里只负责内容排版
+    const shell = `position:absolute;inset:0;overflow:hidden;font-family:${FONTX}`
 
     /* ---- 数字翻牌 ---- */
     if (c.type === 'deco.number') {
       const up = p.dir === 'up', down = p.dir === 'down'
       const dcol = up ? '#FF5B6E' : down ? '#00D9A0' : t.sub
       return `<div style="${shell};padding:20px 22px">` +
-        corners(t) +
         `<div style="display:flex;justify-content:space-between;align-items:center">` +
         `<span style="font:400 13px/1 ${FONTX};color:${t.sub};letter-spacing:1px">${esc(p.label || '')}</span>` +
         `<i style="display:block;width:6px;height:6px;border-radius:50%;background:${t.accent};box-shadow:0 0 7px ${al(t.accent, .9)}"></i></div>` +
@@ -207,7 +230,7 @@ export function createScreen(
           `<div style="width:${w}%;height:100%;background:linear-gradient(90deg,${cidx},${al(cidx, .3)});box-shadow:0 0 6px ${al(cidx, .5)}"></div></div>` +
           `</div></div>`
       }).join('')
-      return `<div style="${shell};padding:16px 18px">${corners(t)}` +
+      return `<div style="${shell};padding:16px 18px">` +
         `<div style="margin-bottom:14px;font:500 13px/1 ${FONTX};color:${t.text}">${esc(p.title || c.name)}</div>${rows}</div>`
     }
 
@@ -229,7 +252,7 @@ export function createScreen(
       }).join('')
       const head = `<div style="display:flex;align-items:center;gap:10px;height:26px;padding:0 6px;font:500 11.5px/1 ${FONTX};color:${t.sub};border-bottom:1px solid ${t.panelBorder};margin-bottom:6px">` +
         `<span style="width:20px"></span><span style="flex:1">名称</span><span>指标</span><span style="width:46px;text-align:center">状态</span></div>`
-      return `<div style="${shell};padding:14px 16px">${corners(t)}` +
+      return `<div style="${shell};padding:14px 16px">` +
         `<div style="margin-bottom:10px;font:500 13px/1 ${FONTX};color:${t.text}">${esc(p.title || c.name)}</div>` +
         head +
         `<div class="sf-scroll" style="position:absolute;left:16px;right:16px;top:70px;bottom:12px;overflow:hidden">` +
@@ -262,13 +285,63 @@ export function createScreen(
     return ''
   }
 
-  /** 摆放节点（位置 / 尺寸 / 旋转） */
+  /** 重算百分比布局（铺满模式）。组件位置 / 窗口尺寸变化时调用，成本 O(n) */
+  function computeLayout(): void {
+    if (!fill) return
+    const W = schema.page.width
+    const H = schema.page.height
+    const vw = root.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : W)
+    const vh = root.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : H)
+    lay = computeFill(W, H, vw, vh, (schema.components || []).filter((c) => !c.hidden).map((c) => c.rect))
+  }
+
+  /**
+   * 摆放节点（位置 / 尺寸 / 旋转）
+   *
+   * 铺满模式：盒子用百分比铺满屏幕（left/top/width/height 都是 %），
+   * 屏幕多宽多高就撑多宽多高；盒子里的内容由 .sf-fit 等比缩放居中。
+   */
   function place(el: HTMLElement, r: ComponentItem['rect']): void {
+    if (fill && lay) {
+      const s = lay.place(r)
+      el.style.left = s.left
+      el.style.top = s.top
+      el.style.width = s.width
+      el.style.height = s.height
+      el.style.transformOrigin = '0 0'
+      el.style.transform = r.rotate ? `rotate(${r.rotate}deg)` : ''
+      return
+    }
     el.style.left = r.x + 'px'
     el.style.top = r.y + 'px'
     el.style.width = r.w + 'px'
     el.style.height = r.h + 'px'
     el.style.transform = r.rotate ? `rotate(${r.rotate}deg)` : ''
+  }
+
+  /**
+   * 内容层（.sf-fit）：
+   *   铺满模式 —— 保持设计稿像素尺寸，按 k 等比缩放并在盒子内居中，
+   *              圆不被压扁、文字不被拉长，多出来的空间留在盒子内；
+   *   编辑模式 —— 100% 铺满节点（与设计稿 1:1）。
+   */
+  function placeInner(el: HTMLElement, r: ComponentItem['rect']): void {
+    const f = el.querySelector('.sf-fit') as HTMLElement | null
+    if (!f) return
+    f.style.position = 'absolute'
+    f.style.left = '0'
+    f.style.top = '0'
+    if (fill && lay) {
+      const s = lay.place(r)
+      f.style.width = r.w + 'px'
+      f.style.height = r.h + 'px'
+      f.style.transformOrigin = '0 0'
+      f.style.transform = `translate(${s.dx}px,${s.dy}px) scale(${s.k})`
+    } else {
+      f.style.width = '100%'
+      f.style.height = '100%'
+      f.style.transform = ''
+    }
   }
 
   /** 渲染 / 更新单个组件（节点复用，类型或主题变了才重建） */
@@ -304,12 +377,14 @@ export function createScreen(
       if (rec.pending) {
         // 图表还在分帧队列中：只刷新出队时要用的最新配置（外壳已在上次调度时渲染）
         scheduleChart(rec, c)
+        placeInner(node, c.rect)
         return
       }
       if (!rec.chart) {
         // 首次出现：外壳立即上屏（标题/边框可见），图表本体走 rAF 队列分帧初始化
         node.innerHTML = card(c, t, CHART_SHELL)
         scheduleChart(rec, c)
+        placeInner(node, c.rect)
       } else {
         const tt = node.querySelector('.sf-card-title')
         if (tt) tt.textContent = (c.props.title as string) || c.name
@@ -322,10 +397,19 @@ export function createScreen(
           (rec.chart.getWidth() !== host.clientWidth || rec.chart.getHeight() !== host.clientHeight)) {
           rec.chart.resize()
         }
+        placeInner(node, c.rect)
         rec.chart.setOption(buildOption(c, t) as never, true)
       }
     } else {
-      node.innerHTML = domHTML(c, t)
+      // 有面板的物料：外框（背景/边框/四角）铺满盒子，内容放 .sf-fit 里等比缩放
+      const framed = c.type === 'deco.number' || c.type === 'deco.rank' || c.type === 'deco.scrollList'
+      node.innerHTML =
+        (framed
+          ? `<div class="sf-frame" style="position:absolute;inset:0;background:${t.panel};border:1px solid ${t.panelBorder};border-radius:4px;overflow:hidden">${corners(t)}`
+          : '') +
+        `<div class="sf-fit" style="position:absolute;left:0;top:0;width:100%;height:100%">${domHTML(c, t)}</div>` +
+        (framed ? '</div>' : '')
+      placeInner(node, c.rect)
     }
   }
 
@@ -362,11 +446,23 @@ export function createScreen(
   function update(next: ScreenSchema): void {
     schema = next
     const t = tok()
-    root.style.width = schema.page.width + 'px'
-    root.style.height = schema.page.height + 'px'
-    // 页面背景：用户覆盖色 或 主题默认的顶部辉光渐变
-    root.style.background = schema.page.background ||
-      `radial-gradient(130% 95% at 50% 0%,${t.panel} 0%,${t.bg} 62%)`
+    if (fill) {
+      // 铺满模式：内容层直接撑满父容器，组件按百分比落位
+      root.style.width = '100%'
+      root.style.height = '100%'
+    } else {
+      root.style.width = schema.page.width + 'px'
+      root.style.height = schema.page.height + 'px'
+    }
+    // 页面背景：编辑器画布自己画；预览 / 导出由外层全屏容器承担（paintBackground=false）
+    root.style.background = paintBackground ? pageBackground(schema, t) : 'transparent'
+    if (paintBackground) {
+      // background 简写会重置 size/position/repeat，必须随后单独设一次
+      root.style.backgroundSize = 'cover'
+      root.style.backgroundPosition = 'center'
+      root.style.backgroundRepeat = 'no-repeat'
+    }
+    computeLayout()
     const alive: Record<string, boolean> = {}
     ;(schema.components || []).forEach((c) => { alive[c.id] = true; renderComp(c) })
     // 清理已删除组件的节点与图表实例
@@ -384,17 +480,30 @@ export function createScreen(
 
   function updateLayout(next: ScreenSchema): void {
     schema = next
+    // 拖拽改位置可能改变内容区范围（百分比基准），先重算再摆放
+    computeLayout()
     ;(schema.components || []).forEach((c) => {
       const rec = nodes[c.id]
       if (!rec) return
       place(rec.el, c.rect)
+      placeInner(rec.el, c.rect)
       rec.el.style.zIndex = String(c.z || 1)
       rec.el.style.display = c.hidden ? 'none' : 'block'
       if (rec.chart) rec.chart.resize()
     })
   }
 
+  /** 容器尺寸变化：重算布局 → 重新落位 → 图表 resize */
   function resize(): void {
+    computeLayout()
+    if (fill) {
+      ;(schema.components || []).forEach((c) => {
+        const rec = nodes[c.id]
+        if (!rec) return
+        place(rec.el, c.rect)
+        placeInner(rec.el, c.rect)
+      })
+    }
     Object.keys(nodes).forEach((id) => { nodes[id].chart?.resize() })
   }
 

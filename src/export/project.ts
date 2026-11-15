@@ -56,20 +56,113 @@ function bgCss(t: ThemeToken, schema: ScreenSchema): string {
     `radial-gradient(130% 95% at 50% 0%,${t.panel} 0%,${t.bg} 62%)`
 }
 
-/** 组件在主页面里的定位包裹样式（Vue 用 style 字符串） */
-function vuePos(c: ComponentItem): string {
-  const r = c.rect
-  let s = `left:${r.x}px;top:${r.y}px;width:${r.w}px;height:${r.h}px;z-index:${c.z || 1};`
-  if (r.rotate) s += `transform:rotate(${r.rotate}deg);`
-  return s
+/** 有面板外框（能拉伸）的物料；标题、时钟是无边框装饰 */
+const NO_FRAME: Record<string, boolean> = { 'deco.title': true, 'deco.clock': true }
+
+/**
+ * 生成 BOXES 字面量 —— 每个组件的设计稿矩形 + 层级 + 是否带外框。
+ * 布局算法（src/lib/fit.js）按这些矩形算出百分比位置，再按盒子尺寸算内容缩放。
+ */
+function boxesLiteral(comps: ComponentItem[]): string {
+  const rows = comps.map((c) => {
+    const r = c.rect
+    const f = [
+      `x: ${r.x}`, `y: ${r.y}`, `w: ${r.w}`, `h: ${r.h}`,
+      `z: ${c.z || 1}`,
+      `card: ${NO_FRAME[c.type] ? 'false' : 'true'}`,
+    ]
+    if (r.rotate) f.push(`rotate: ${r.rotate}`)
+    return `  { ${f.join(', ')} },`
+  })
+  return rows.join('\n')
 }
 
-/** 组件在主页面里的定位包裹样式（React 用 style 对象） */
-function reactPos(c: ComponentItem): string {
-  const r = c.rect
-  const parts = [`left: ${r.x}`, `top: ${r.y}`, `width: ${r.w}`, `height: ${r.h}`, `zIndex: ${c.z || 1}`]
-  if (r.rotate) parts.push(`transform: 'rotate(${r.rotate}deg)'`)
-  return `{ ${parts.join(', ')} }`
+/**
+ * 生成 src/lib/fit.js —— 铺满屏幕的布局算法（与编辑器 core/fit.ts 同一套规则）。
+ * 单独成文件而不是塞进 App：换适配策略只改这一处。
+ * 注意：这里用纯 JS 字符串拼接，避免与外层模板字符串冲突。
+ */
+function fitJs(): string {
+  return `/**
+ * 铺满屏幕布局 —— ScreenForge 生成，规则与编辑器 core/fit.ts 一致
+ *
+ *   ① 组件盒子用百分比：left/top/width/height 相对「内容区」，
+ *      屏幕多宽多高，盒子就撑多宽多高，四条边严丝合缝；
+ *   ② 盒子里的内容层保持设计稿像素尺寸，按 k 等比缩放并居中
+ *      （k = min(盒宽/设计宽, 盒高/设计高)）⇒ 圆永远是正圆、文字不被拉长；
+ *   ③ 跨满整屏的装饰元素（通栏标题）强制铺满，不参与内容区计算。
+ *
+ * 于是「盒子自适应屏幕 + 盒子内容保持比例」两者同时成立：
+ * 视频墙/超宽屏上卡片自动变宽变高，卡片里的图表不会变形成椭圆。
+ */
+
+/** 「跨满整屏」的判定阈值（通栏标题、整屏底色） */
+const SPAN_RATIO = 0.97
+
+/** 百分比字符串 */
+function pct(v) {
+  return Math.round(v * 10000) / 10000 + '%'
+}
+
+/**
+ * @param W 设计稿宽  @param H 设计稿高
+ * @param vw 视口宽   @param vh 视口高
+ * @param boxes [{ x, y, w, h }] 参与布局的组件（隐藏的请先过滤掉）
+ */
+export function computeFill(W, H, vw, vh, boxes) {
+  const items = boxes.filter((b) => b.w > 0 && b.h > 0)
+
+  // 内容区：剔除页面四周留白，让内容真正顶到屏幕四条边
+  const xs = items.filter((b) => b.w < W * SPAN_RATIO)
+  const ys = items.filter((b) => b.h < H * SPAN_RATIO)
+  const xsSrc = xs.length ? xs : items
+  const ysSrc = ys.length ? ys : items
+
+  let x0 = Infinity
+  let x1 = -Infinity
+  let y0 = Infinity
+  let y1 = -Infinity
+  for (const b of xsSrc) {
+    if (b.x < x0) x0 = b.x
+    if (b.x + b.w > x1) x1 = b.x + b.w
+  }
+  for (const b of ysSrc) {
+    if (b.y < y0) y0 = b.y
+    if (b.y + b.h > y1) y1 = b.y + b.h
+  }
+  if (!isFinite(x0) || !isFinite(y0)) {
+    x0 = 0; x1 = W; y0 = 0; y1 = H
+  }
+  const bw = Math.max(1, x1 - x0)
+  const bh = Math.max(1, y1 - y0)
+
+  return {
+    bbox: { x: x0, y: y0, w: bw, h: bh },
+    place(r) {
+      const spanX = r.w >= W * SPAN_RATIO
+      const spanY = r.h >= H * SPAN_RATIO
+      const leftPct = spanX ? 0 : ((r.x - x0) / bw) * 100
+      const widthPct = spanX ? 100 : (r.w / bw) * 100
+      const topPct = spanY ? 0 : ((r.y - y0) / bh) * 100
+      const heightPct = spanY ? 100 : (r.h / bh) * 100
+
+      // 盒子真实像素尺寸 → 内容等比放大到「尽量填满盒子且不变形」
+      const slotW = (widthPct / 100) * vw
+      const slotH = (heightPct / 100) * vh
+      const k = Math.min(slotW / r.w, slotH / r.h) || 1
+      return {
+        left: pct(leftPct),
+        top: pct(topPct),
+        width: pct(widthPct),
+        height: pct(heightPct),
+        k,
+        dx: Math.round((slotW - r.w * k) / 2),
+        dy: Math.round((slotH - r.h * k) / 2),
+      }
+    },
+  }
+}
+`
 }
 
 /** 子组件文件基名，如 Widget01_Title */
@@ -95,10 +188,20 @@ function screenCss(t: ThemeToken, schema: ScreenSchema): string {
  * ============================================================ */
 body { margin: 0; overflow: hidden; background: ${t.bg}; }
 
-/* ---------- 页面骨架：1920×1080 设计稿 + JS 缩放 ---------- */
-.viewport { position: fixed; inset: 0; }
-.screen { position: absolute; width: 1920px; height: 1080px; transform-origin: 0 0; background: ${bgCss(t, schema)}; }
-.abs { position: absolute; }
+/* ---------- 页面骨架：铺满屏幕（百分比盒子 + 内容等比） ----------
+ * .abs  组件盒子：left/top/width/height 由 src/lib/fit.js 写成百分比，
+ *       屏幕多宽多高就撑多宽多高，四条边严丝合缝；
+ * .fit  内容层：保持设计稿像素尺寸，按 k 等比缩放并居中 ⇒ 圆不会变椭圆。
+ */
+.viewport { position: fixed; inset: 0; overflow: hidden; background: ${bgCss(t, schema)}; background-size: cover; background-position: center; background-repeat: no-repeat; }
+.screen { position: absolute; inset: 0; }
+.abs { position: absolute; overflow: hidden; box-sizing: border-box; }
+/* 卡片外框铺满盒子（背景 / 边框 / 四角随屏幕拉伸） */
+.abs.card { background: ${t.panel}; border: 1px solid ${t.panelBorder}; border-radius: 4px; }
+.fit { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+/* 外框已由 .abs.card 提供：面板只画内容，避免双边框、双四角 */
+.abs.card > .fit > .sf-panel { background: transparent; border-color: transparent; border-radius: 0; }
+.abs.card > .fit > .sf-panel > .sf-c { display: none; }
 
 /* ---------- 卡片公共外壳 ---------- */
 .sf-panel { width: 100%; height: 100%; box-sizing: border-box; position: relative; background: ${t.panel}; border: 1px solid ${t.panelBorder}; border-radius: 4px; overflow: hidden; }
@@ -400,16 +503,20 @@ function vueComp(c: ComponentItem, t: ThemeToken): string {
   return ''
 }
 
-/** Vue 主页面 App.vue：编排所有子组件 + 1920×1080 自适应缩放 */
-function vueApp(comps: ComponentItem[], names: Record<string, string>, t: ThemeToken, schema: ScreenSchema): string {
-  const imports = comps.map((c, i) =>
+/**
+ * Vue 主页面 App.vue —— 百分比铺满 + 内容等比（规则见 src/lib/fit.js）
+ */
+function vueApp(comps: ComponentItem[], names: Record<string, string>, schema: ScreenSchema): string {
+  const imports = comps.map((c) =>
     `import ${names[c.id]} from './components/${names[c.id]}.vue'`).join('\n')
-  const usages = comps.map((c) =>
-    `      <div class="abs" style="${vuePos(c)}">\n        <${names[c.id]} />\n      </div>`).join('\n')
+  const usages = comps.map((c, i) =>
+    `      <div class="abs${NO_FRAME[c.type] ? '' : ' card'}" :style="slots[${i}].box">` +
+    `${NO_FRAME[c.type] ? '' : cornersHtml()}` +
+    `<div class="fit" :style="slots[${i}].inner"><${names[c.id]} /></div></div>`).join('\n')
   return `<template>
   <div class="viewport">
-    <!-- 设计稿 1920×1080，fit() 按 window 等比缩放并居中（letterbox） -->
-    <div class="screen" :style="screenStyle">
+    <!-- 设计稿 ${schema.page.width}×${schema.page.height}：盒子按百分比铺满，内容等比缩放居中 -->
+    <div class="screen">
 ${usages}
     </div>
   </div>
@@ -417,29 +524,50 @@ ${usages}
 
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { computeFill } from './lib/fit'
 ${imports}
 
-const screenStyle = ref<Record<string, string>>({})
+const W = ${schema.page.width}
+const H = ${schema.page.height}
 
-function fit() {
-  const w = 1920
-  const h = 1080
-  const k = Math.min(window.innerWidth / w, window.innerHeight / h)
-  screenStyle.value = {
-    transform: 'scale(' + k + ')',
-    left: Math.round((window.innerWidth - w * k) / 2) + 'px',
-    top: Math.round((window.innerHeight - h * k) / 2) + 'px',
-  }
+const BOXES = [
+${boxesLiteral(comps)}
+]
+
+type Slot = { box: Record<string, string>; inner: Record<string, string> }
+
+// 百分比落位：盒子铺满屏幕，内容层按 k 等比缩放居中
+function layout(): Slot[] {
+  const L = computeFill(W, H, window.innerWidth, window.innerHeight, BOXES)
+  return BOXES.map((b) => {
+    const s = L.place(b)
+    const box: Record<string, string> = { left: s.left, top: s.top, width: s.width, height: s.height, zIndex: String(b.z) }
+    if (b.rotate) box.transform = 'rotate(' + b.rotate + 'deg)'
+    return {
+      box,
+      inner: {
+        width: b.w + 'px',
+        height: b.h + 'px',
+        transform: 'translate(' + s.dx + 'px,' + s.dy + 'px) scale(' + s.k + ')',
+      },
+    }
+  })
+}
+
+// 首帧就要有尺寸：图表的 canvas 在子组件 onMounted 里初始化，晚一帧会拿到 0×0
+const slots = ref<Slot[]>(layout())
+
+function relayout() {
+  slots.value = layout()
 }
 
 onMounted(() => {
-  fit()
-  window.addEventListener('resize', fit)
+  window.addEventListener('resize', relayout)
 })
-onBeforeUnmount(() => window.removeEventListener('resize', fit))
+onBeforeUnmount(() => window.removeEventListener('resize', relayout))
 </script>
 
-<!-- 页面骨架样式见 src/screen.css（全局） -->
+<!-- 骨架样式见 src/screen.css（全局） -->
 `
 }
 
@@ -674,39 +802,58 @@ function reactComp(c: ComponentItem, t: ThemeToken): string {
   return ''
 }
 
-/** React 主页面 App.jsx */
+/** React 主页面 App.jsx —— 百分比铺满 + 内容等比（规则见 src/lib/fit.js） */
 function reactApp(comps: ComponentItem[], names: Record<string, string>, schema: ScreenSchema): string {
-  const imports = comps.map((c, i) =>
+  const imports = comps.map((c) =>
     `import ${names[c.id]} from './components/${names[c.id]}'`).join('\n')
-  const usages = comps.map((c) =>
-    `        <div className="abs" style={${reactPos(c)}}>\n          <${names[c.id]} />\n        </div>`).join('\n')
+  const usages = comps.map((c, i) =>
+    `        <div className={'abs${NO_FRAME[c.type] ? '' : ' card'}'} style={slots[${i}].box}>` +
+    `${NO_FRAME[c.type] ? '' : cornersHtml()}` +
+    `<div className="fit" style={slots[${i}].inner}><${names[c.id]} /></div></div>`).join('\n')
   return `// ${schema.page.title} · 主页面 · ScreenForge 导出
 import { useEffect, useState } from 'react'
+import { computeFill } from './lib/fit'
 ${imports}
 
+const W = ${schema.page.width}
+const H = ${schema.page.height}
+
+// 设计稿 ${schema.page.width}×${schema.page.height}：盒子按百分比铺满，内容等比缩放居中
+const BOXES = [
+${boxesLiteral(comps)}
+]
+
+// 百分比落位：盒子铺满屏幕，内容层按 k 等比缩放居中
+function layout() {
+  const L = computeFill(W, H, window.innerWidth, window.innerHeight, BOXES)
+  return BOXES.map((b) => {
+    const s = L.place(b)
+    const box = { left: s.left, top: s.top, width: s.width, height: s.height, zIndex: b.z }
+    if (b.rotate) box.transform = 'rotate(' + b.rotate + 'deg)'
+    return {
+      box,
+      inner: {
+        width: b.w + 'px',
+        height: b.h + 'px',
+        transform: 'translate(' + s.dx + 'px,' + s.dy + 'px) scale(' + s.k + ')',
+      },
+    }
+  })
+}
+
 export default function App() {
-  // 设计稿 1920×1080，fit() 按 window 等比缩放并居中（letterbox）
-  const [screenStyle, setScreenStyle] = useState({})
+  // 首帧就要有尺寸：子组件 useEffect 里初始化 canvas，晚一帧会拿到 0×0
+  const [slots, setSlots] = useState(layout)
 
   useEffect(() => {
-    const fit = () => {
-      const w = 1920
-      const h = 1080
-      const k = Math.min(window.innerWidth / w, window.innerHeight / h)
-      setScreenStyle({
-        transform: 'scale(' + k + ')',
-        left: Math.round((window.innerWidth - w * k) / 2) + 'px',
-        top: Math.round((window.innerHeight - h * k) / 2) + 'px',
-      })
-    }
-    fit()
-    window.addEventListener('resize', fit)
-    return () => window.removeEventListener('resize', fit)
+    const relayout = () => setSlots(layout())
+    window.addEventListener('resize', relayout)
+    return () => window.removeEventListener('resize', relayout)
   }, [])
 
   return (
     <div className="viewport">
-      <div className="screen" style={screenStyle}>
+      <div className="screen">
 ${usages}
       </div>
     </div>
@@ -785,7 +932,7 @@ npm run build    # 生产构建
 
 ## 结构
 
-- \`src/App.vue\` 主页面：1920×1080 设计稿 + 等比缩放，绝对定位编排所有子组件
+- \`src/App.vue\` 主页面：**盒子按百分比铺满屏幕、内容等比缩放**，编排所有子组件\n- \`src/lib/fit.js\` 铺满布局算法（百分比落位 + 内容缩放系数，换策略只改这一处）
 - \`src/components/Widget*.vue\` 每个大屏组件一个文件，配置项固化为字面量
 - \`src/screen.css\` 全局样式，主题色已固化为字面量（改色直接替换值）
 - \`src/lib/echarts.ts\` ECharts 按需注册出口（新增图表类型在这里补注册）
@@ -812,7 +959,7 @@ npm run build    # 生产构建
 
 ## 结构
 
-- \`src/App.jsx\` 主页面：1920×1080 设计稿 + 等比缩放，绝对定位编排所有子组件
+- \`src/App.jsx\` 主页面：**盒子按百分比铺满屏幕、内容等比缩放**，编排所有子组件\n- \`src/lib/fit.js\` 铺满布局算法（百分比落位 + 内容缩放系数，换策略只改这一处）
 - \`src/components/Widget*.jsx\` 每个大屏组件一个文件，配置项固化为字面量
 - \`src/screen.css\` 全局样式，主题色已固化为字面量（改色直接替换值）
 - \`src/lib/echarts.ts\` ECharts 按需注册出口（新增图表类型在这里补注册）
@@ -854,8 +1001,9 @@ export function projectFiles(
     files.push({ path: 'README.md', content: vueReadme(title) })
     files.push({ path: 'src/main.ts', content: mainTs(usesMap) })
     files.push({ path: 'src/lib/echarts.ts', content: echartsSetupCode() })
+    files.push({ path: 'src/lib/fit.js', content: fitJs() })
     files.push({ path: 'src/screen.css', content: screenCss(t, schema) })
-    files.push({ path: 'src/App.vue', content: vueApp(comps, names, t, schema) })
+    files.push({ path: 'src/App.vue', content: vueApp(comps, names, schema) })
     comps.forEach((c) => files.push({ path: `src/components/${names[c.id]}.vue`, content: vueComp(c, t) }))
     if (usesMap) files.push({ path: 'src/assets/china.json', content: chinaJson })
   } else {
@@ -865,6 +1013,7 @@ export function projectFiles(
     files.push({ path: 'README.md', content: reactReadme(title) })
     files.push({ path: 'src/main.jsx', content: mainJsx(usesMap) })
     files.push({ path: 'src/lib/echarts.ts', content: echartsSetupCode() })
+    files.push({ path: 'src/lib/fit.js', content: fitJs() })
     files.push({ path: 'src/screen.css', content: screenCss(t, schema) })
     files.push({ path: 'src/App.jsx', content: reactApp(comps, names, schema) })
     comps.forEach((c) => files.push({ path: `src/components/${names[c.id]}.jsx`, content: reactComp(c, t) }))

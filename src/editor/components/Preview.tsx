@@ -1,46 +1,59 @@
 /**
- * 全屏预览：与编辑器共用 createScreen 渲染同一份 schema 的克隆，
- * 等比缩放居中，Esc / 按钮退出。
+ * 全屏预览：与编辑器共用 createScreen 渲染同一份 schema 的克隆。
+ *
+ * 适配策略（与导出 HTML / 导出 Vue·React 完全一致，见 core/fit.ts）：
+ *   ① 每个组件的外层盒子用百分比定位 —— 屏幕多宽多高，盒子就撑多宽多高，
+ *      四条边严丝合缝，不留黑边、不裁切内容；
+ *   ② 盒子里的内容层按 k 等比缩放居中（k = min(盒宽/设计宽, 盒高/设计高)）——
+ *      饼图/仪表盘/雷达图的圆永远是正圆，文字也不会被纵向拉长；
+ *   ③ 背景画在预览层上（内容层透明），屏幕比例不同也不会露出黑边。
  */
 
 import { useEffect, useRef } from 'react'
 import { createScreen, type ScreenHandle } from '../../core/renderer'
 import { THEMES } from '../../core/themes'
+import { pageBackground } from '../../core/fit'
 import { clone } from '../utils/misc'
-import { DESIGN_H, DESIGN_W } from '../utils/geometry'
 import type { EditorCtrl } from '../App'
 
 export default function Preview({ ctrl, onClose }: { ctrl: EditorCtrl; onClose(): void }) {
-  const wrapRef = useRef<HTMLDivElement>(null)
+  const layerRef = useRef<HTMLDivElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const exitRef = useRef<HTMLButtonElement>(null)
   const sceneRef = useRef<ScreenHandle | null>(null)
 
   useEffect(() => {
     if (!rootRef.current) return
-    sceneRef.current = createScreen(rootRef.current, clone(ctrl.schemaRef.current), { themes: THEMES })
-    const apply = () => {
-      const k = Math.min(window.innerWidth / DESIGN_W, window.innerHeight / DESIGN_H)
-      const w = wrapRef.current
-      if (!w) return
-      w.style.transform = `scale(${k})`
-      w.style.left = Math.round((window.innerWidth - DESIGN_W * k) / 2) + 'px'
-      w.style.top = Math.round((window.innerHeight - DESIGN_H * k) / 2) + 'px'
+    const snap = clone(ctrl.schemaRef.current)
+    // fill:true —— 盒子百分比铺满视口；paintBackground:false —— 背景由预览层承担
+    sceneRef.current = createScreen(rootRef.current, snap, {
+      themes: THEMES,
+      fill: true,
+      paintBackground: false,
+    })
+
+    const layer = layerRef.current
+    if (layer) {
+      layer.style.background = pageBackground(snap, THEMES[snap.page.theme] || THEMES.custom)
+      // background 简写会重置 size/position/repeat，必须随后单独设一次
+      layer.style.backgroundSize = 'cover'
+      layer.style.backgroundPosition = 'center'
+      layer.style.backgroundRepeat = 'no-repeat'
     }
-    // resize 用 rAF 合并：拖动窗口时一帧只写一次 transform，不逐事件触发样式重算
+
+    // resize 用 rAF 合并：拖动窗口时一帧只重排一次
     let raf = 0
-    const fit = () => {
+    const onResize = () => {
       if (raf) return
-      raf = requestAnimationFrame(() => { raf = 0; apply() })
+      raf = requestAnimationFrame(() => { raf = 0; sceneRef.current?.resize() })
     }
-    apply()
-    window.addEventListener('resize', fit)
+    window.addEventListener('resize', onResize)
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     exitRef.current?.focus() // 打开即把焦点交给退出按钮，键盘用户不会迷路
     return () => {
       sceneRef.current?.dispose()
-      window.removeEventListener('resize', fit)
+      window.removeEventListener('resize', onResize)
       window.removeEventListener('keydown', onKey)
       if (raf) cancelAnimationFrame(raf)
     }
@@ -48,8 +61,11 @@ export default function Preview({ ctrl, onClose }: { ctrl: EditorCtrl; onClose()
   }, [])
 
   return (
-    <div id="previewLayer" role="dialog" aria-modal="true" aria-label="大屏全屏预览">
-      <div id="previewWrap" ref={wrapRef}><div id="previewRoot" ref={rootRef} aria-hidden="true" /></div>
+    <div id="previewLayer" ref={layerRef} role="dialog" aria-modal="true" aria-label="大屏全屏预览">
+      <div id="previewRoot" ref={rootRef} aria-hidden="true" />
+      <span id="previewFitHint" title="卡片按屏幕百分比铺满，卡片内容保持原比例（圆不会变形）">
+        铺满屏幕 · 内容等比
+      </span>
       <button id="exitPreview" ref={exitRef} onClick={onClose}>退出预览 · Esc</button>
     </div>
   )
