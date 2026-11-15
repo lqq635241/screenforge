@@ -70,10 +70,11 @@ export default function Palette({ ctrl }: { ctrl: EditorCtrl }) {
       <div className="sec-t">操作提示</div>
       <div className="hint">
         拖拽或点击添加组件<br />
-        选中后拖边框缩放（自动对齐校准）<br />
+        拖动 / 缩放自动吸附对齐<br />
+        <span className="kbd">Alt</span> 拖动可临时关闭吸附<br />
         <span className="kbd">Delete</span> 删除 · <span className="kbd">Ctrl+Z</span> 撤销<br />
-        方向键微调位置（Shift ×10）<br />
-        点击空白处编辑页面主题
+        方向键微调（<span className="kbd">Shift</span> ×10）<br />
+        点击空白处编辑主题
       </div>
     </aside>
   )

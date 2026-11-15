@@ -4,8 +4,11 @@
  * 坐标换算要点（原型踩过的坑）：
  *   画布被 transform:scale(k) 缩放，因此屏幕位移 ÷ k 才是设计稿位移；
  *   否则放大后拖拽距离会成倍放大。
- * 缩放吸附：拖动手柄时被拖动的边会与其它组件/画布的边、中心线
- *   靠近时自动吸附，并显示粉红色校准线（snapResize）。
+ * 吸附（两者共用一套候选线与校准线绘制）：
+ *   移动吸附 snapMove —— 被拖组件的起边/中心/止边与其它组件、画布的边和中心线
+ *     靠近时自动吸附，因此上下左右四面都能贴；
+ *   缩放吸附 snapResize —— 被拖动的边与上述候选线靠近时吸附。
+ *   容差都按 scale 反算（8/scale），保证屏幕上手感恒定；按住 Alt 可临时关闭移动吸附。
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -31,6 +34,12 @@ interface DragState {
   pid: number
 }
 
+/** 两组校准线是否等价（顺序无关）：用于避免拖拽时每帧都触发 overlay 重渲染 */
+function sameGuides(a: Guide[], b: Guide[]): boolean {
+  if (a.length !== b.length) return false
+  return a.every((g) => b.some((n) => n.axis === g.axis && n.pos === g.pos))
+}
+
 export default function CanvasStage({ ctrl }: { ctrl: EditorCtrl }) {
   const stageRef = useRef<HTMLDivElement>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -38,6 +47,8 @@ export default function CanvasStage({ ctrl }: { ctrl: EditorCtrl }) {
   const dragRef = useRef<DragState | null>(null)
   const [scale, setScale] = useState(1)
   const [guides, setGuides] = useState<Guide[]>([])
+  /** 校准线更新：内容没变就复用旧引用，React 会自动跳过这次重渲染 */
+  const applyGuides = (next: Guide[]) => setGuides((prev) => (sameGuides(prev, next) ? prev : next))
   const sel = ctrl.schemaRef.current.components.find((c) => c.id === ctrl.selId) || null
 
   /* ---- 渲染器挂载（只跑一次；schema 同步由 App 的 ver effect 负责） ---- */
@@ -116,15 +127,19 @@ export default function CanvasStage({ ctrl }: { ctrl: EditorCtrl }) {
       const dy = p.y - drag.sy
       if (Math.abs(dx) > 1 || Math.abs(dy) > 1) drag.moved = true
 
+      // 容差按 scale 反算：设计稿 8px 在缩放到 40% 时屏幕上只有 3px，会「吸不住」；
+      // 除以 scale 后屏幕上的手感恒定。按住 Alt 临时关闭吸附（T=0 即只做画布约束）。
+      const T = e.altKey ? 0 : 8 / scale
+
       if (drag.mode === 'move') {
-        const res = snapMove(ctrl.schemaRef.current.components, c.id, c.rect.w, c.rect.h, drag.orig.x + dx, drag.orig.y + dy)
+        const res = snapMove(ctrl.schemaRef.current.components, c.id, c.rect.w, c.rect.h, drag.orig.x + dx, drag.orig.y + dy, T)
         c.rect = { ...c.rect, x: res.x, y: res.y }
-        setGuides(res.guides)
+        applyGuides(res.guides)
       } else {
         const base = resizeRect(drag.orig, drag.handle!, dx, dy)
-        const res = snapResize(ctrl.schemaRef.current.components, c.id, drag.handle!, drag.orig, base)
+        const res = snapResize(ctrl.schemaRef.current.components, c.id, drag.handle!, drag.orig, base, 7 / scale)
         c.rect = res.rect
-        setGuides(res.guides)
+        applyGuides(res.guides)
       }
       ctrl.bump('layout')
     }

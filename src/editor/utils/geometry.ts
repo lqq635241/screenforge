@@ -97,9 +97,55 @@ function nearest(v: number, lines: number[], T: number): number | null {
   return best ? best.l : null
 }
 
+/** 单轴吸附结果：校正后的坐标 + 校正后精确对齐的候选线 */
+interface AxisSnap {
+  pos: number
+  /** 已经对齐上的线（用于画校准线，可能同时有多条，如左右两侧都贴住） */
+  guides: number[]
+}
+
 /**
- * 拖拽移动吸附：对齐画布与其它组件的边/中心。
- * 返回校正后的坐标 + 需要绘制的校准线。
+ * 单轴吸附求解。
+ *
+ * 思路：把矩形在这一轴上的三条基准线（起边 / 中心 / 止边）分别与所有候选线
+ * 比对，取距离最近且落在容差 T 内的一对，位移量就是它们的差值。
+ *
+ * 为什么是「基准线 × 候选线」而不是只比左上角：
+ *   只比起边的话，「把 A 的右边缘贴到 B 的左边缘」这类最常见的对齐永远吸不住；
+ *   三条基准线两两交叉后，上/下/左/右四种边与中心线就都能吸附了。
+ *
+ * 校正后再回收一次「精确对齐」的线：位移后可能不止一条线重合
+ * （比如宽度相同、左右两边同时贴住），这些都要画出来。
+ */
+function snapAxis(pos: number, size: number, lines: number[], T: number): AxisSnap {
+  const ownOf = (p: number) => [p, p + size / 2, p + size] // 起边 / 中心 / 止边
+  let best: { d: number; delta: number } | null = null
+  for (const o of ownOf(pos)) {
+    for (const l of lines) {
+      const delta = l - o
+      const d = Math.abs(delta)
+      if (d <= T && (!best || d < best.d)) best = { d, delta }
+    }
+  }
+  const out = best ? pos + best.delta : pos
+  const guides: number[] = []
+  for (const o of ownOf(out)) {
+    for (const l of lines) {
+      if (Math.abs(l - o) < 0.01 && guides.indexOf(l) < 0) guides.push(l)
+    }
+  }
+  return { pos: out, guides }
+}
+
+/**
+ * 拖拽移动吸附：上下左右四条边与中心线，全部参与对齐。
+ *
+ * 候选线来自两处（见 collectLines）：
+ *   1. 画布 —— 左/上边界、中心线、右/下边界（贴边 + 水平垂直居中）；
+ *   2. 其它可见组件 —— 各自的起边、中心、止边。
+ *
+ * T 是设计稿像素容差，由调用方按 scale 换算（见 CanvasStage），
+ * 保证屏幕上看起来始终是同样松紧的手感。
  */
 export function snapMove(
   components: ComponentItem[],
@@ -110,30 +156,28 @@ export function snapMove(
   y: number,
   T = 8,
 ): { x: number; y: number; guides: Guide[] } {
+  const maxX = Math.max(0, DESIGN_W - w)
+  const maxY = Math.max(0, DESIGN_H - h)
+
+  // 顺序很重要：先把位置约束进画布，再吸附。
+  // 反过来的话，「吸附到某条线」的结果可能又被边界拉回来 —— 位置和校准线就对不上了
+  // （实测：拖到画布右边界附近时先吸到相邻组件边 x=1480，再被约束回 1478，线却画在 1480）。
+  // 约束在前还有个好处：贴着边界时 right / bottom 天然精确落在 1920 / 1080 上，吸附优先级最高。
+  const cx = Math.min(Math.max(x, 0), maxX)
+  const cy = Math.min(Math.max(y, 0), maxY)
+  const ax = snapAxis(cx, w, collectLines(components, skipId, false), T)
+  const ay = snapAxis(cy, h, collectLines(components, skipId, true), T)
+
+  // 兜底：吸附结果仍不允许出界（正常情况下不会触发，触发说明对齐线在画布外）
+  const nx = Math.min(Math.max(ax.pos, 0), maxX)
+  const ny = Math.min(Math.max(ay.pos, 0), maxY)
+  if (nx !== ax.pos) ax.guides.length = 0
+  if (ny !== ay.pos) ay.guides.length = 0
+
   const guides: Guide[] = []
-  const vlines = collectLines(components, skipId, false)
-  const hlines = collectLines(components, skipId, true)
-  const vCands: { pos: number; line: number }[] = [
-    { pos: 0, line: 0 }, { pos: (DESIGN_W - w) / 2, line: DESIGN_W / 2 }, { pos: DESIGN_W - w, line: DESIGN_W },
-  ]
-  const hCands: { pos: number; line: number }[] = [
-    { pos: 0, line: 0 }, { pos: (DESIGN_H - h) / 2, line: DESIGN_H / 2 }, { pos: DESIGN_H - h, line: DESIGN_H },
-  ]
-  vCands.forEach((v) => vlines.push(v.pos))
-  hCands.forEach((v) => hlines.push(v.pos))
-  const bx = nearest(x, vCands.map((c) => c.pos), T)
-  const by = nearest(y, hCands.map((c) => c.pos), T)
-  if (bx != null) {
-    const cand = vCands.find((c) => c.pos === bx)!
-    x = cand.pos
-    guides.push({ axis: 'v', pos: cand.line })
-  }
-  if (by != null) {
-    const cand = hCands.find((c) => c.pos === by)!
-    y = cand.pos
-    guides.push({ axis: 'h', pos: cand.line })
-  }
-  return { x: Math.round(x), y: Math.round(y), guides }
+  ax.guides.forEach((p) => guides.push({ axis: 'v', pos: p }))
+  ay.guides.forEach((p) => guides.push({ axis: 'h', pos: p }))
+  return { x: Math.round(nx), y: Math.round(ny), guides }
 }
 
 /**
