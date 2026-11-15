@@ -51,17 +51,32 @@ export default function CanvasStage({ ctrl }: { ctrl: EditorCtrl }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  /* ---- 16:9 letterbox：画布适配舞台 ---- */
-  const fit = () => {
-    const r = stageRef.current?.getBoundingClientRect()
-    if (!r) return
-    const k = Math.max(0.12, Math.min((r.width - 60) / DESIGN_W, (r.height - 60) / DESIGN_H))
-    setScale(k)
-  }
+  /* ---- 16:9 letterbox：画布适配舞台 ----
+   * 用 ResizeObserver 观察舞台盒子本身，而不是监听 window.resize：
+   *   1) 侧栏随媒体查询变窄（窗口没变、盒子变了）也能立即重算，之前会漏；
+   *   2) 回调只读一次 getBoundingClientRect，再用 rAF 合并 —— 拖动窗口时
+   *      一帧最多算一次 setScale，不会每个 resize 事件都触发一次重渲染。
+   */
   useEffect(() => {
-    fit()
-    window.addEventListener('resize', fit)
-    return () => window.removeEventListener('resize', fit)
+    const el = stageRef.current
+    if (!el) return
+    let raf = 0
+    const fit = () => {
+      const r = el.getBoundingClientRect()
+      const k = Math.max(0.12, Math.min((r.width - 60) / DESIGN_W, (r.height - 60) / DESIGN_H))
+      setScale(k)
+    }
+    const schedule = () => {
+      if (raf) return
+      raf = requestAnimationFrame(() => { raf = 0; fit() })
+    }
+    fit() // 首帧同步算一次，避免以 scale=1 闪一下
+    const ro = new ResizeObserver(schedule)
+    ro.observe(el)
+    return () => {
+      ro.disconnect()
+      if (raf) cancelAnimationFrame(raf)
+    }
   }, [])
 
   /** 屏幕 → 设计稿坐标 */

@@ -95,7 +95,24 @@ https://<你的用户名>.github.io/<仓库名>/
 | **图表分帧初始化** | `src/core/renderer.ts` 的 rAF 初始化队列 | 卡片外壳先上屏，图表每帧只 init 一个，消除多图表同帧数百毫秒的长任务 |
 | **地图 geoJSON 懒加载** | `public/geo/china.json` + `option.ts` 异步注册 | 60KB 地图数据移出首屏 chunk，首次用到地图才 fetch；导出 HTML 仍内联（单文件离线可用） |
 | 依赖预构建 + 源码预热 | `vite.config.ts` `optimizeDeps` / `warmup` | 本地 `npm run dev` 首开不再触发整页 reload（5.1s → 2.6s） |
+| **画布适配改用 ResizeObserver** | `CanvasStage.tsx` + `Preview.tsx` | 侧栏随媒体查询变宽/变窄（窗口没变、盒子变了）也能重算；回调经 rAF 合并，拖窗口时一帧只写一次 transform，不逐事件触发重排 |
 
+## 无障碍（a11y）
+
+axe-core 按 WCAG 2.1 A/AA 扫描**零违规**。主要约束：
+
+| 项 | 做法 | 位置 |
+|---|---|---|
+| 表单可访问名称 | 所有 `input` / `select` / `textarea` 带 `aria-label`（面板里的文字标签只是视觉提示，不构成关联） | `Inspector.tsx` |
+| 可点元素键盘化 | 物料卡片 `role="button"` + `tabIndex` + Enter / Space 等价点击（保留 div 是为了不破坏原生拖拽） | `Palette.tsx` |
+| 状态语义 | 主题色板 `aria-pressed`、开关 `role="switch"` + `aria-checked`、数据来源分段按钮 `aria-pressed` | `Topbar.tsx` / `Inspector.tsx` |
+| 对话框 | 预览层 `role="dialog"` + `aria-modal`，打开即聚焦「退出预览」，Esc 关闭 | `Preview.tsx` |
+| 动态播报 | toast 为 `role="status"` + `aria-live="polite"`，导出进度/JSON 报错会被读屏播报 | `App.tsx` |
+| 颜色对比度 | 正文 ≥ 4.5:1：`.hint` 3.96 → 6.18，分组标题 4.63 → 5.4（`#6F7E96` → `#7C8CA4`） | `index.css` |
+| 焦点可见 | 全局 `:focus-visible` 焦点环，只在键盘操作时出现 | `index.css` |
+| 标题层级 | 语义化 `h1`（`sr-only` 视觉隐藏，给读屏与搜索引擎） | `App.tsx` |
+
+> 图表画布（ECharts canvas）本身没有文本替代，屏幕阅读器只能读到卡片标题——这是 canvas 渲染的固有局限，V1 不做逐图 option 的文本描述。
 
 ## 已实现能力
 

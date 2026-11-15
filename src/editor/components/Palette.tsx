@@ -47,14 +47,20 @@ export default function Palette({ ctrl }: { ctrl: EditorCtrl }) {
                 key={m.type}
                 className="tile"
                 draggable
-                title="拖入画布，或点击添加"
+                role="button"
+                tabIndex={0}
+                title={`点击或拖入画布添加${m.name}`}
                 onDragStart={(e) => {
                   e.dataTransfer.setData('text/plain', m.type)
                   e.dataTransfer.effectAllowed = 'copy'
                 }}
                 onClick={() => ctrl.addMaterial(m.type)}
+                onKeyDown={(e) => {
+                  // 键盘等价操作：Enter / 空格 = 点击添加
+                  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); ctrl.addMaterial(m.type) }
+                }}
               >
-                {icon(m.type)}
+                <span aria-hidden="true">{icon(m.type)}</span>
                 <span>{m.name}</span>
               </div>
             ))}

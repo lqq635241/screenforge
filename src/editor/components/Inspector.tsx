@@ -19,7 +19,11 @@ function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string;
       <div className="sw-line">
         <span>{f.l}</span>
         <button
+          type="button"
           className={'switch' + (v ? ' on' : '')}
+          role="switch"
+          aria-checked={!!v}
+          aria-label={f.l}
           onClick={() => { c.props[f.k] = !c.props[f.k]; ctrl.bump('full'); ctrl.pushHistory() }}
         />
       </div>
@@ -29,7 +33,7 @@ function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string;
     return (
       <div className="row">
         <span className="lb">{f.l}</span>
-        <select className="in" value={String(v ?? '')} onChange={(e) => { c.props[f.k] = e.target.value; ctrl.commit() }}>
+        <select className="in" aria-label={f.l} value={String(v ?? '')} onChange={(e) => { c.props[f.k] = e.target.value; ctrl.commit() }}>
           {f.opts!.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
         </select>
       </div>
@@ -39,7 +43,7 @@ function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string;
     return (
       <div className="row">
         <span className="lb">{f.l}</span>
-        <input className="in" type="number" min={f.min} max={f.max} value={String(v ?? '')}
+        <input className="in" type="number" aria-label={f.l} min={f.min} max={f.max} value={String(v ?? '')}
           onChange={(e) => { c.props[f.k] = Number(e.target.value); ctrl.bump('full') }}
           onBlur={() => ctrl.pushHistory()} />
       </div>
@@ -48,7 +52,7 @@ function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string;
   return (
     <div className="row">
       <span className="lb">{f.l}</span>
-      <input className="in" value={String(v ?? '')}
+      <input className="in" aria-label={f.l} value={String(v ?? '')}
         onChange={(e) => { c.props[f.k] = e.target.value; ctrl.bump('full') }}
         onBlur={() => ctrl.pushHistory()} />
     </div>
@@ -68,16 +72,16 @@ function DataBlock({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
   }
   const mode = c.dataMode || 'static'
   const seg = (
-    <div className="seg">
-      <button className={mode === 'static' ? 'on' : ''} onClick={() => { c.dataMode = 'static'; ctrl.bump('full') }}>写死数据</button>
-      <button className={mode === 'http' ? 'on' : ''} onClick={() => { c.dataMode = 'http'; ctrl.bump('full') }}>接口数据</button>
+    <div className="seg" role="group" aria-label="数据来源方式">
+      <button type="button" aria-pressed={mode === 'static'} className={mode === 'static' ? 'on' : ''} onClick={() => { c.dataMode = 'static'; ctrl.bump('full') }}>写死数据</button>
+      <button type="button" aria-pressed={mode === 'http'} className={mode === 'http' ? 'on' : ''} onClick={() => { c.dataMode = 'http'; ctrl.bump('full') }}>接口数据</button>
     </div>
   )
   let body: JSX.Element
   if (mode === 'static') {
     body = (
       <>
-        <textarea ref={taRef} className="in" spellCheck={false} defaultValue={JSON.stringify(c.data || {}, null, 2)} />
+        <textarea ref={taRef} className="in" spellCheck={false} aria-label="数据 JSON" defaultValue={JSON.stringify(c.data || {}, null, 2)} />
         <div className="mini-btns" style={{ marginTop: 8 }}>
           <button className="mini" onClick={() => {
             try {
@@ -94,13 +98,13 @@ function DataBlock({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
     const h = c.http || {}
     body = (
       <>
-        <div className="row"><span className="lb">地址</span><input className="in" defaultValue={h.url || ''} placeholder="https://api.example.com/stat"
+        <div className="row"><span className="lb">地址</span><input className="in" aria-label="接口地址" defaultValue={h.url || ''} placeholder="https://api.example.com/stat"
           onChange={(e) => { c.http = { ...h, url: e.target.value }; ctrl.pushHistory() }} /></div>
         <div className="row"><span className="lb">方法</span>
-          <select className="in" defaultValue={h.method || 'GET'} onChange={(e) => { c.http = { ...h, method: e.target.value as 'GET' | 'POST' }; ctrl.pushHistory() }}>
+          <select className="in" aria-label="请求方法" defaultValue={h.method || 'GET'} onChange={(e) => { c.http = { ...h, method: e.target.value as 'GET' | 'POST' }; ctrl.pushHistory() }}>
             <option>GET</option><option>POST</option>
           </select></div>
-        <div className="row"><span className="lb">轮询/秒</span><input className="in" type="number" min={0} defaultValue={h.interval || 0}
+        <div className="row"><span className="lb">轮询/秒</span><input className="in" type="number" aria-label="轮询间隔（秒）" min={0} defaultValue={h.interval || 0}
           onChange={(e) => { c.http = { ...h, interval: Number(e.target.value) }; ctrl.pushHistory() }} /></div>
         <div className="hint" style={{ marginTop: 8 }}>
           V1 仅保存配置不真实取数。正式版为「数据源 → 转换 → 字段映射」三段管线 + 三栏调试视图（见设计方案 §7）。
@@ -173,7 +177,7 @@ function PageSettings({ ctrl }: { ctrl: EditorCtrl }) {
         {fields.map(([k, l]) => (
           <div className="row" key={k}>
             <span className="lb">{l}</span>
-            <input className="in" type="color" value={THEMES.custom[k] as string}
+            <input className="in" type="color" aria-label={`${l}颜色`} value={THEMES.custom[k] as string}
               onChange={(e) => editCustom((t) => { (t as any)[k] = e.target.value })} />
           </div>
         ))}
@@ -181,7 +185,7 @@ function PageSettings({ ctrl }: { ctrl: EditorCtrl }) {
           <span className="lb" style={{ paddingTop: 6 }}>图表色</span>
           <div style={{ flex: 1, display: 'flex', gap: 5 }}>
             {THEMES.custom.palette.map((cc, i) => (
-              <input key={i} type="color" value={cc} style={{ flex: 1, minWidth: 0, height: 26, padding: 1, border: '1px solid #1E2735', borderRadius: 4, background: '#101724', cursor: 'pointer' }}
+              <input key={i} type="color" aria-label={`图表色 ${i + 1}`} value={cc} style={{ flex: 1, minWidth: 0, height: 26, padding: 1, border: '1px solid #1E2735', borderRadius: 4, background: '#101724', cursor: 'pointer' }}
                 onChange={(e) => editCustom((t) => { t.palette[i] = e.target.value })} />
             ))}
           </div>
@@ -200,9 +204,9 @@ function PageSettings({ ctrl }: { ctrl: EditorCtrl }) {
       <div className="grp">
         <div className="grp-t">页面</div>
         <div className="row"><span className="lb">背景</span>
-          <input className="in" type="color" value={schema.page.background || cur.bg}
+          <input className="in" type="color" aria-label="页面背景色" value={schema.page.background || cur.bg}
             onChange={(e) => { schema.page.background = e.target.value; ctrl.pushHistory(); ctrl.bump('full') }} /></div>
-        <div className="row"><span className="lb">尺寸</span><input className="in" value="1920 × 1080（固定 16:9）" disabled style={{ color: '#6F7E96' }} /></div>
+        <div className="row"><span className="lb">尺寸</span><input className="in" aria-label="画布尺寸" value="1920 × 1080（固定 16:9）" disabled style={{ color: '#6F7E96' }} /></div>
       </div>
       <div className="grp">
         <div className="grp-t">组件统计</div>
@@ -221,6 +225,9 @@ function PageSettings({ ctrl }: { ctrl: EditorCtrl }) {
     </>
   )
 }
+
+/** X/Y/W/H 输入框的可访问名称 */
+const RECT_LABEL = { x: 'X 坐标', y: 'Y 坐标', w: '宽度', h: '高度' } as const
 
 /** 组件属性面板（选中组件时） */
 function CompPanel({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
@@ -259,11 +266,11 @@ function CompPanel({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
       <div className="grp">
         <div className="grp-t">基础</div>
         <div className="row"><span className="lb">名称</span>
-          <input className="in" defaultValue={c.name} onChange={(e) => { c.name = e.target.value; ctrl.bump('full') }} onBlur={() => ctrl.pushHistory()} /></div>
+          <input className="in" aria-label="组件名称" defaultValue={c.name} onChange={(e) => { c.name = e.target.value; ctrl.bump('full') }} onBlur={() => ctrl.pushHistory()} /></div>
         <div className="quad">
           {(['x', 'y', 'w', 'h'] as const).map((k) => (
             <div className="row" key={k}><span className="lb">{k.toUpperCase()}</span>
-              <input className="in" type="number" value={c.rect[k]} onChange={(e) => setRect(k, e.target.value)} onBlur={() => ctrl.pushHistory()} /></div>
+              <input className="in" type="number" aria-label={RECT_LABEL[k]} value={c.rect[k]} onChange={(e) => setRect(k, e.target.value)} onBlur={() => ctrl.pushHistory()} /></div>
           ))}
         </div>
         <div className="mini-btns" style={{ marginTop: 9 }}>
@@ -281,7 +288,7 @@ function CompPanel({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
       <DataBlock c={c} ctrl={ctrl} />
       <div className="grp">
         <div className="grp-t">高级（rawOption 逃生舱）</div>
-        <textarea ref={taRef} className="in" style={{ height: 74 }} spellCheck={false}
+        <textarea ref={taRef} className="in" aria-label="option 片段 JSON" style={{ height: 74 }} spellCheck={false}
           placeholder='{"legend":{"top":30}}'
           defaultValue={c.rawOption ? JSON.stringify(c.rawOption, null, 2) : ''} />
         <div className="mini-btns" style={{ marginTop: 8 }}>

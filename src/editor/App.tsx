@@ -218,6 +218,8 @@ export default function App() {
 
   return (
     <>
+      {/* 文档主标题：视觉上省略（顶栏已有品牌区），但给屏幕阅读器与搜索引擎一个明确的一级标题 */}
+      <h1 className="sr-only">ScreenForge 可视化大屏搭建器</h1>
       <Topbar ctrl={ctrl} onPreview={() => setPreviewOpen(true)} onExportHtml={doExportHtml} onExportProject={doExportProject} />
       <main>
         <Palette ctrl={ctrl} />
@@ -225,7 +227,8 @@ export default function App() {
         <Inspector ctrl={ctrl} />
       </main>
       {previewOpen && <Preview ctrl={ctrl} onClose={() => setPreviewOpen(false)} />}
-      <div id="toast" className={toastMsg ? 'show' : ''}>{toastMsg}</div>
+      {/* role=status：导出进度、格式报错等提示由屏幕阅读器主动播报 */}
+      <div id="toast" role="status" aria-live="polite" className={toastMsg ? 'show' : ''}>{toastMsg}</div>
     </>
   )
 }

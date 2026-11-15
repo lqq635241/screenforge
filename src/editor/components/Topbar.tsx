@@ -36,6 +36,8 @@ export default function Topbar({ ctrl, onPreview, onExportHtml, onExportProject 
               className={'sw' + (cur === k ? ' active' : '')}
               data-theme={k}
               title={t.label}
+              aria-label={`主题：${t.label}`}
+              aria-pressed={cur === k}
               onClick={() => ctrl.setTheme(k)}
             >
               <i style={{ left: 0, top: 0, width: '100%', height: '100%', background: t.bg }} />
