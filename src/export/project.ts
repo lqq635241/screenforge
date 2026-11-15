@@ -86,15 +86,21 @@ function fitJs(): string {
   return `/**
  * 铺满屏幕布局 —— ScreenForge 生成，规则与编辑器 core/fit.ts 一致
  *
- *   ① 组件盒子用百分比：left/top/width/height 相对「内容区」，
- *      屏幕多宽多高，盒子就撑多宽多高，四条边严丝合缝；
- *   ② 盒子里的内容层保持设计稿像素尺寸，按 k 等比缩放并居中
- *      （k = min(盒宽/设计宽, 盒高/设计高)）⇒ 圆永远是正圆、文字不被拉长；
- *   ③ 跨满整屏的装饰元素（通栏标题）强制铺满，不参与内容区计算。
+ *   ① 组件盒子用百分比：left/top/width/height 相对「视口」，
+ *      屏幕多宽多高，盒子就撑多宽多高，不裁切；
+ *      整块内容四周留一圈固定像素留白（EDGE_GAP），不贴屏幕边；
+ *   ② 图表卡片：图表容器撑满卡片，网格 / 半径按百分比自适应；
+ *      饼图、仪表盘、雷达图的半径按容器短边取长度 ⇒ 容器再宽，圆仍是正圆；
+ *   ②' DOM 卡片：内容层保持设计稿像素尺寸，按 k 等比缩放并居中
+ *      （k = min(盒宽/设计宽, 盒高/设计高)）⇒ 文字排版不被打散；
+ *   ③ 跨满整屏的装饰元素（通栏标题、整屏底色）强制占满留白内区。
  *
  * 于是「盒子自适应屏幕 + 盒子内容保持比例」两者同时成立：
  * 视频墙/超宽屏上卡片自动变宽变高，卡片里的图表不会变形成椭圆。
  */
+
+/** 屏幕四周固定留白（px）：小屏按短边 2.5% 收窄 */
+export const EDGE_GAP = 24
 
 /** 「跨满整屏」的判定阈值（通栏标题、整屏底色） */
 const SPAN_RATIO = 0.97
@@ -108,11 +114,12 @@ function pct(v) {
  * @param W 设计稿宽  @param H 设计稿高
  * @param vw 视口宽   @param vh 视口高
  * @param boxes [{ x, y, w, h }] 参与布局的组件（隐藏的请先过滤掉）
+ * @param pad 四周固定留白（px），默认 EDGE_GAP
  */
-export function computeFill(W, H, vw, vh, boxes) {
+export function computeFill(W, H, vw, vh, boxes, pad = EDGE_GAP) {
   const items = boxes.filter((b) => b.w > 0 && b.h > 0)
 
-  // 内容区：剔除页面四周留白，让内容真正顶到屏幕四条边
+  // 内容区：剔除页面四周留白，让内容顶到留白的内边缘
   const xs = items.filter((b) => b.w < W * SPAN_RATIO)
   const ys = items.filter((b) => b.h < H * SPAN_RATIO)
   const xsSrc = xs.length ? xs : items
@@ -136,19 +143,32 @@ export function computeFill(W, H, vw, vh, boxes) {
   const bw = Math.max(1, x1 - x0)
   const bh = Math.max(1, y1 - y0)
 
+  // 四周留白：固定像素，小屏按短边 2.5% 收窄
+  const gap = Math.max(0, Math.min(pad, Math.min(vw, vh) * 0.025))
+  const innerW = Math.max(1, vw - gap * 2)
+  const innerH = Math.max(1, vh - gap * 2)
+
   return {
     bbox: { x: x0, y: y0, w: bw, h: bh },
+    gap,
     place(r) {
       const spanX = r.w >= W * SPAN_RATIO
       const spanY = r.h >= H * SPAN_RATIO
-      const leftPct = spanX ? 0 : ((r.x - x0) / bw) * 100
-      const widthPct = spanX ? 100 : (r.w / bw) * 100
-      const topPct = spanY ? 0 : ((r.y - y0) / bh) * 100
-      const heightPct = spanY ? 100 : (r.h / bh) * 100
+      // 相对内容区的比例（0~1）：跨满整屏的元素直接占满留白内区
+      const relL = spanX ? 0 : (r.x - x0) / bw
+      const relW = spanX ? 1 : r.w / bw
+      const relT = spanY ? 0 : (r.y - y0) / bh
+      const relH = spanY ? 1 : r.h / bh
 
-      // 盒子真实像素尺寸 → 内容等比放大到「尽量填满盒子且不变形」
-      const slotW = (widthPct / 100) * vw
-      const slotH = (heightPct / 100) * vh
+      // 盒子真实像素尺寸（留白内区里按比例铺开）
+      const slotW = relW * innerW
+      const slotH = relH * innerH
+      // 换回相对整个视口的百分比：盒子仍是纯百分比定位，但已让出四周 gap
+      const leftPct = vw ? ((gap + relL * innerW) / vw) * 100 : 0
+      const topPct = vh ? ((gap + relT * innerH) / vh) * 100 : 0
+      const widthPct = vw ? (slotW / vw) * 100 : 100
+      const heightPct = vh ? (slotH / vh) * 100 : 100
+
       const k = Math.min(slotW / r.w, slotH / r.h) || 1
       return {
         left: pct(leftPct),
@@ -162,6 +182,28 @@ export function computeFill(W, H, vw, vh, boxes) {
     },
   }
 }
+
+/** 会随卡片缩放的视觉尺寸键（与编辑器 core/option.ts 的 SCALED_KEYS 一致） */
+const SCALED_KEYS = ['fontSize', 'lineHeight', 'symbolSize', 'itemWidth', 'itemHeight', 'itemGap', 'barWidth', 'barMaxWidth', 'borderWidth']
+
+/**
+ * 递归缩放 option 里的字号 / 点径（返回新对象，不改入参）。
+ * 图表容器填满卡片后，ECharts 的百分比尺寸会自适应，但字号是绝对像素，
+ * 不缩放的话 4K 上小得看不清、小屏上又会挤在一起。
+ */
+export function scaleText(node, s) {
+  if (!node || s === 1 || typeof node !== 'object') return node
+  if (Array.isArray(node)) return node.map((v) => scaleText(v, s))
+  const out = {}
+  for (const k of Object.keys(node)) {
+    const v = node[k]
+    if (typeof v === 'number' && SCALED_KEYS.indexOf(k) >= 0) out[k] = Math.round(v * s * 100) / 100
+    else if (v && typeof v === 'object') out[k] = scaleText(v, s)
+    else out[k] = v
+  }
+  return out
+}
+
 `
 }
 
@@ -188,32 +230,38 @@ function screenCss(t: ThemeToken, schema: ScreenSchema): string {
  * ============================================================ */
 body { margin: 0; overflow: hidden; background: ${t.bg}; }
 
-/* ---------- 页面骨架：铺满屏幕（百分比盒子 + 内容等比） ----------
+/* ---------- 页面骨架：铺满屏幕 ----------
  * .abs  组件盒子：left/top/width/height 由 src/lib/fit.js 写成百分比，
- *       屏幕多宽多高就撑多宽多高，四条边严丝合缝；
- * .fit  内容层：保持设计稿像素尺寸，按 k 等比缩放并居中 ⇒ 圆不会变椭圆。
+ *       屏幕多宽多高就撑多宽多高，四周让出一圈固定留白（EDGE_GAP）不贴边；
+ * .fill 图表类卡片：撑满盒子 —— 图表随卡片一起铺满宽高；
+ * .fit  DOM 类卡片（数字 / 排行榜 / 列表）：保持设计稿尺寸等比缩放居中。
+ *      --sf-k 是盒子相对设计稿的缩放系数，标题栏高度、字号按它跟随。
  */
 .viewport { position: fixed; inset: 0; overflow: hidden; background: ${bgCss(t, schema)}; background-size: cover; background-position: center; background-repeat: no-repeat; }
 .screen { position: absolute; inset: 0; }
 .abs { position: absolute; overflow: hidden; box-sizing: border-box; }
 /* 卡片外框铺满盒子（背景 / 边框 / 四角随屏幕拉伸） */
 .abs.card { background: ${t.panel}; border: 1px solid ${t.panelBorder}; border-radius: 4px; }
+.fill { position: absolute; inset: 0; }
 .fit { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 /* 外框已由 .abs.card 提供：面板只画内容，避免双边框、双四角 */
-.abs.card > .fit > .sf-panel { background: transparent; border-color: transparent; border-radius: 0; }
+.abs.card > .fit > .sf-panel,
+.abs.card > .fill > .sf-panel { background: transparent; border-color: transparent; border-radius: 0; }
 .abs.card > .fit > .sf-panel > .sf-c { display: none; }
 
 /* ---------- 卡片公共外壳 ---------- */
 .sf-panel { width: 100%; height: 100%; box-sizing: border-box; position: relative; background: ${t.panel}; border: 1px solid ${t.panelBorder}; border-radius: 4px; overflow: hidden; }
 .sf-panel-title { margin-bottom: 10px; font-size: 13px; font-weight: 500; color: ${t.text}; }
 
-/* 图表卡片：标题栏 + 顶部光线 + 四角（与渲染器 card() 一致） */
-.sf-card-head { position: absolute; left: 0; top: 0; right: 0; height: 42px; display: flex; align-items: center; gap: 8px; padding: 0 14px; }
-.sf-card-tick { display: block; width: 3px; height: 13px; background: ${t.accent}; box-shadow: 0 0 6px ${al(t.accent, .8)}; }
-.sf-card-title { font-size: 15px; font-weight: 500; letter-spacing: .5px; color: ${t.text}; }
+/* 图表卡片：标题栏 + 顶部光线 + 四角（与渲染器 card() 一致）
+ * 高度 / 字号都乘 --sf-k：卡片变大时标题栏跟着变高，字也跟着变大；
+ * 图表容器 .sf-chart-box 填满剩余区域 ⇒ 图表随卡片铺满，圆由 ECharts 按短边自适应。 */
+.sf-card-head { position: absolute; left: 0; top: 0; right: 0; height: calc(42px * var(--sf-k, 1)); display: flex; align-items: center; gap: calc(8px * var(--sf-k, 1)); padding: 0 calc(14px * var(--sf-k, 1)); }
+.sf-card-tick { display: block; width: calc(3px * var(--sf-k, 1)); height: calc(13px * var(--sf-k, 1)); background: ${t.accent}; box-shadow: 0 0 6px ${al(t.accent, .8)}; }
+.sf-card-title { font-size: calc(15px * var(--sf-k, 1)); font-weight: 500; letter-spacing: .5px; color: ${t.text}; }
 .sf-topline { position: absolute; left: 8%; right: 8%; top: 0; height: 1px; background: linear-gradient(90deg, transparent, ${al(t.accent, .9)}, transparent); pointer-events: none; }
-.sf-wash { position: absolute; left: 0; top: 0; right: 0; height: 52px; background: linear-gradient(180deg, ${al(t.accent, .06)}, transparent); pointer-events: none; }
-.sf-chart-box { position: absolute; left: 0; top: 42px; right: 0; bottom: 0; }
+.sf-wash { position: absolute; left: 0; top: 0; right: 0; height: calc(52px * var(--sf-k, 1)); background: linear-gradient(180deg, ${al(t.accent, .06)}, transparent); pointer-events: none; }
+.sf-chart-box { position: absolute; left: 0; top: calc(42px * var(--sf-k, 1)); right: 0; bottom: 0; }
 
 /* ---------- 四角发光边框 ---------- */
 .sf-c { position: absolute; width: 9px; height: 9px; pointer-events: none; box-shadow: 0 0 6px ${al(t.accent, .55)}; }
@@ -297,20 +345,39 @@ function vueChart(c: ComponentItem, t: ThemeToken): string {
 // echarts 走按需注册出口（src/lib/echarts.ts），产物更小
 import echarts from '../lib/echarts'
 import { onMounted, onBeforeUnmount, ref } from 'vue'
+import { scaleText } from '../lib/fit'
 
 const el = ref<HTMLDivElement>()
 let chart: echarts.ECharts | null = null
 
+// 设计稿里这张卡片的尺寸（含标题栏）：用来算字号缩放系数
+const W = ${c.rect.w}
+const H = ${c.rect.h}
+
 // 配置项固化为字面量：改样式直接改这里；接接口请替换数据后重新 setOption
 const option = ${optionStr}
 
+let lastK = 0
+
+// 卡片填满屏幕后尺寸会变：resize 容器 + 字号按 k 重算。
+// 变化小于 2% 只 resize 不重建 option —— 拖动窗口时每帧 setOption 会明显卡顿。
+const apply = (animate: boolean) => {
+  if (!chart || !el.value) return
+  const box = el.value.parentElement as HTMLElement
+  const k = Math.min(box.clientWidth / W, box.clientHeight / H) || 1
+  chart.resize()
+  if (Math.abs(k - lastK) < Math.max(0.02, lastK * 0.02)) return
+  lastK = k
+  chart.setOption(animate ? scaleText(option, k) : { ...scaleText(option, k), animation: false }, true)
+}
+
+const onResize = () => apply(false)
+
 onMounted(() => {
   chart = echarts.init(el.value!)
-  chart.setOption(option)
+  apply(true)
   window.addEventListener('resize', onResize)
 })
-
-const onResize = () => chart?.resize()
 
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onResize)
@@ -504,18 +571,24 @@ function vueComp(c: ComponentItem, t: ThemeToken): string {
 }
 
 /**
- * Vue 主页面 App.vue —— 百分比铺满 + 内容等比（规则见 src/lib/fit.js）
+ * Vue 主页面 App.vue —— 盒子百分比铺满；图表撑满卡片，DOM 卡片内容等比（见 src/lib/fit.js）
  */
 function vueApp(comps: ComponentItem[], names: Record<string, string>, schema: ScreenSchema): string {
   const imports = comps.map((c) =>
     `import ${names[c.id]} from './components/${names[c.id]}.vue'`).join('\n')
-  const usages = comps.map((c, i) =>
-    `      <div class="abs${NO_FRAME[c.type] ? '' : ' card'}" :style="slots[${i}].box">` +
-    `${NO_FRAME[c.type] ? '' : cornersHtml()}` +
-    `<div class="fit" :style="slots[${i}].inner"><${names[c.id]} /></div></div>`).join('\n')
+  const usages = comps.map((c, i) => {
+    // 图表卡片：内容层撑满盒子（.fill），图表随卡片铺满，圆由 ECharts 按短边自适应；
+    // DOM 卡片：内容层按设计稿尺寸等比缩放居中（.fit），文字排版不被打散。
+    const chart = CHART_TYPES.includes(c.type)
+    const body = chart
+      ? `<div class="fill"><${names[c.id]} /></div>`
+      : `<div class="fit" :style="slots[${i}].inner"><${names[c.id]} /></div>`
+    return `      <div class="abs${NO_FRAME[c.type] ? '' : ' card'}" :style="slots[${i}].box">` +
+      `${NO_FRAME[c.type] || chart ? '' : cornersHtml()}` + body + `</div>`
+  }).join('\n')
   return `<template>
   <div class="viewport">
-    <!-- 设计稿 ${schema.page.width}×${schema.page.height}：盒子按百分比铺满，内容等比缩放居中 -->
+    <!-- 设计稿 ${schema.page.width}×${schema.page.height}：盒子按百分比铺满；图表撑满卡片，DOM 卡片内容等比居中 -->
     <div class="screen">
 ${usages}
     </div>
@@ -541,7 +614,10 @@ function layout(): Slot[] {
   const L = computeFill(W, H, window.innerWidth, window.innerHeight, BOXES)
   return BOXES.map((b) => {
     const s = L.place(b)
-    const box: Record<string, string> = { left: s.left, top: s.top, width: s.width, height: s.height, zIndex: String(b.z) }
+    const box: Record<string, string> = {
+      left: s.left, top: s.top, width: s.width, height: s.height, zIndex: String(b.z),
+      '--sf-k': String(Math.round(s.k * 1000) / 1000),
+    }
     if (b.rotate) box.transform = 'rotate(' + b.rotate + 'deg)'
     return {
       box,
@@ -580,6 +656,11 @@ function reactChart(c: ComponentItem, t: ThemeToken): string {
 import { useEffect, useRef } from 'react'
 // echarts 走按需注册出口（src/lib/echarts.ts），产物更小
 import echarts from '../lib/echarts'
+import { scaleText } from '../lib/fit'
+
+// 设计稿里这张卡片的尺寸（含标题栏）：用来算字号缩放系数
+const W = ${c.rect.w}
+const H = ${c.rect.h}
 
 // 配置项固化为字面量：改样式直接改这里；接接口请替换数据后重新 setOption
 const option = ${optionStr}
@@ -589,8 +670,21 @@ export default function Chart() {
 
   useEffect(() => {
     const chart = echarts.init(el.current)
-    chart.setOption(option)
-    const onResize = () => chart.resize()
+    let lastK = 0
+
+    // 卡片填满屏幕后尺寸会变：resize 容器 + 字号按 k 重算。
+    // 变化小于 2% 只 resize 不重建 option —— 拖动窗口时每帧 setOption 会明显卡顿。
+    const apply = (animate) => {
+      const box = el.current.parentElement
+      const k = Math.min(box.clientWidth / W, box.clientHeight / H) || 1
+      chart.resize()
+      if (Math.abs(k - lastK) < Math.max(0.02, lastK * 0.02)) return
+      lastK = k
+      chart.setOption(animate ? scaleText(option, k) : { ...scaleText(option, k), animation: false }, true)
+    }
+
+    apply(true)
+    const onResize = () => apply(false)
     window.addEventListener('resize', onResize)
     return () => {
       window.removeEventListener('resize', onResize)
@@ -802,14 +896,18 @@ function reactComp(c: ComponentItem, t: ThemeToken): string {
   return ''
 }
 
-/** React 主页面 App.jsx —— 百分比铺满 + 内容等比（规则见 src/lib/fit.js） */
+/** React 主页面 App.jsx —— 盒子百分比铺满；图表撑满卡片，DOM 卡片内容等比（见 src/lib/fit.js） */
 function reactApp(comps: ComponentItem[], names: Record<string, string>, schema: ScreenSchema): string {
   const imports = comps.map((c) =>
     `import ${names[c.id]} from './components/${names[c.id]}'`).join('\n')
-  const usages = comps.map((c, i) =>
-    `        <div className={'abs${NO_FRAME[c.type] ? '' : ' card'}'} style={slots[${i}].box}>` +
-    `${NO_FRAME[c.type] ? '' : cornersHtml()}` +
-    `<div className="fit" style={slots[${i}].inner}><${names[c.id]} /></div></div>`).join('\n')
+  const usages = comps.map((c, i) => {
+    const chart = CHART_TYPES.includes(c.type)
+    const body = chart
+      ? `<div className="fill"><${names[c.id]} /></div>`
+      : `<div className="fit" style={slots[${i}].inner}><${names[c.id]} /></div>`
+    return `        <div className={'abs${NO_FRAME[c.type] ? '' : ' card'}'} style={slots[${i}].box}>` +
+      `${NO_FRAME[c.type] || chart ? '' : cornersHtml()}` + body + `</div>`
+  }).join('\n')
   return `// ${schema.page.title} · 主页面 · ScreenForge 导出
 import { useEffect, useState } from 'react'
 import { computeFill } from './lib/fit'
@@ -818,7 +916,7 @@ ${imports}
 const W = ${schema.page.width}
 const H = ${schema.page.height}
 
-// 设计稿 ${schema.page.width}×${schema.page.height}：盒子按百分比铺满，内容等比缩放居中
+// 设计稿 ${schema.page.width}×${schema.page.height}：盒子按百分比铺满；图表撑满卡片，DOM 卡片内容等比居中
 const BOXES = [
 ${boxesLiteral(comps)}
 ]
@@ -828,7 +926,10 @@ function layout() {
   const L = computeFill(W, H, window.innerWidth, window.innerHeight, BOXES)
   return BOXES.map((b) => {
     const s = L.place(b)
-    const box = { left: s.left, top: s.top, width: s.width, height: s.height, zIndex: b.z }
+    const box = {
+      left: s.left, top: s.top, width: s.width, height: s.height, zIndex: b.z,
+      '--sf-k': String(Math.round(s.k * 1000) / 1000),
+    }
     if (b.rotate) box.transform = 'rotate(' + b.rotate + 'deg)'
     return {
       box,
@@ -932,7 +1033,7 @@ npm run build    # 生产构建
 
 ## 结构
 
-- \`src/App.vue\` 主页面：**盒子按百分比铺满屏幕、内容等比缩放**，编排所有子组件\n- \`src/lib/fit.js\` 铺满布局算法（百分比落位 + 内容缩放系数，换策略只改这一处）
+- \`src/App.vue\` 主页面：**盒子按百分比铺满屏幕**（图表撑满卡片、DOM 卡片内容等比），编排所有子组件\n- \`src/lib/fit.js\` 铺满布局算法（百分比落位 + 内容缩放系数 + scaleText 字号缩放，换策略只改这一处）
 - \`src/components/Widget*.vue\` 每个大屏组件一个文件，配置项固化为字面量
 - \`src/screen.css\` 全局样式，主题色已固化为字面量（改色直接替换值）
 - \`src/lib/echarts.ts\` ECharts 按需注册出口（新增图表类型在这里补注册）
@@ -959,7 +1060,7 @@ npm run build    # 生产构建
 
 ## 结构
 
-- \`src/App.jsx\` 主页面：**盒子按百分比铺满屏幕、内容等比缩放**，编排所有子组件\n- \`src/lib/fit.js\` 铺满布局算法（百分比落位 + 内容缩放系数，换策略只改这一处）
+- \`src/App.jsx\` 主页面：**盒子按百分比铺满屏幕**（图表撑满卡片、DOM 卡片内容等比），编排所有子组件\n- \`src/lib/fit.js\` 铺满布局算法（百分比落位 + 内容缩放系数 + scaleText 字号缩放，换策略只改这一处）
 - \`src/components/Widget*.jsx\` 每个大屏组件一个文件，配置项固化为字面量
 - \`src/screen.css\` 全局样式，主题色已固化为字面量（改色直接替换值）
 - \`src/lib/echarts.ts\` ECharts 按需注册出口（新增图表类型在这里补注册）

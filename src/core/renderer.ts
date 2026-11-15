@@ -21,7 +21,7 @@ export type { ScreenHandle } from './schema'
 import type { ThemeToken } from './themes'
 import { THEMES, al } from './themes'
 import { buildOption, ensureChinaMap, fmtNum, FONT } from './option'
-import { computeFill, pageBackground, type FillLayout } from './fit'
+import { computeFill, pageBackground, type FillLayout, type Slot } from './fit'
 
 /** 图表类物料：走 card() 卡片外壳 + ECharts 实例 */
 const CHART_TYPES: Record<string, boolean> = {
@@ -80,6 +80,10 @@ export function createScreen(
     serial: number
     /** 上一次渲染时的可见状态（仅用于识别「隐藏 → 显示」的尺寸校准时机） */
     visible: boolean
+    /** 最近一次渲染该图表用的组件（resize 时据此重建 option，刷新字号） */
+    comp: ComponentItem | null
+    /** 最近一次渲染用的缩放系数（尺寸变化超过阈值才重建 option，避免频繁抖动） */
+    k: number
   }
   const nodes: Record<string, NodeRec> = {}
 
@@ -118,11 +122,14 @@ export function createScreen(
     // 先用 visible 筛掉隐藏组件，避免读取 clientWidth 触发强制同步布局。
     if (!rec.visible) return
     if (!host.clientWidth || !host.clientHeight) return
-    // 铺满模式下内容层被 scale(k)：画布像素密度跟着放大，否则高分屏上会发虚
-    const k = fill && lay ? lay.place(c.rect).k : 1
-    const dpr = (typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1) * (k > 0 ? k : 1)
-    rec.chart = echarts.init(host, undefined, { devicePixelRatio: Math.min(4, dpr) })
-    rec.chart.setOption(buildOption(c, tok()) as never, true)
+    // 容器就是真实像素尺寸（图表填满卡片，不再有 transform 缩放），
+    // 直接用屏幕 DPR 即可；上限 2.5 避免 4K 拼接屏上画布过大吃显存
+    const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1
+    const ks = kOf(c.rect)
+    rec.chart = echarts.init(host, undefined, { devicePixelRatio: Math.min(2.5, dpr) })
+    rec.chart.setOption(buildOption(c, tok(), ks) as never, true)
+    rec.comp = c
+    rec.k = ks
     rec.pending = false
     rec.latest = null
   }
@@ -170,25 +177,28 @@ export function createScreen(
   }
 
   /**
-   * 图表类卡片外壳：外框（背景 / 边框 / 四角 / 顶部光线）+ 内容层。
+   * 图表类卡片外壳。
    *
-   * 外框与内容层分开是为了「盒子铺满、内容等比」：
-   *   .sf-frame 铺满组件盒子（百分比尺寸，随屏幕拉伸），负责边框背景；
-   *   .sf-fit 是设计稿像素尺寸的内容层，铺满模式下按 k 等比缩放并居中，
-   *   于是饼图/仪表盘/雷达图的圆永远是正圆，文字也不会被拉长。
+   * 这里跟 DOM 类物料不同：**不套等比缩放的内容层**。
+   *   外框（背景 / 边框 / 四角）铺满组件盒子，
+   *   标题栏高度、标题字号按 --sf-k 缩放（跟随卡片大小，免得大屏上字太小），
+   *   图表容器直接填满剩余区域 —— 于是图表随卡片一起铺满宽高。
+   *
+   * 圆会不会被拉扁？不会：饼图 / 仪表盘 / 雷达图的半径是**百分比**，
+   * ECharts 按容器短边取长度，容器变宽只会让两侧留白变多，圆仍是正圆。
    */
   function card(c: ComponentItem, t: ThemeToken, body: string): string {
     const p = c.props || {}
+    const k = 'var(--sf-k,1)'
     return `<div class="sf-frame" style="position:absolute;inset:0;background:${t.panel};border:1px solid ${t.panelBorder};border-radius:4px;overflow:hidden">` +
       `<i style="position:absolute;left:8%;right:8%;top:0;height:1px;background:linear-gradient(90deg,transparent,${al(t.accent, .9)},transparent);pointer-events:none"></i>` +
-      `<i style="position:absolute;left:0;top:0;right:0;height:52px;background:linear-gradient(180deg,${al(t.accent, .06)},transparent);pointer-events:none"></i>` +
+      `<i style="position:absolute;left:0;top:0;right:0;height:calc(52px * ${k});background:linear-gradient(180deg,${al(t.accent, .06)},transparent);pointer-events:none"></i>` +
       corners(t) +
-      `<div class="sf-fit" style="position:absolute;left:0;top:0;width:100%;height:100%">` +
-      `<div style="position:absolute;left:0;top:0;right:0;height:42px;display:flex;align-items:center;gap:8px;padding:0 14px">` +
-      `<i style="display:block;width:3px;height:13px;background:${t.accent};box-shadow:0 0 6px ${al(t.accent, .8)}"></i>` +
-      `<span class="sf-card-title" style="font:500 15px/1 ${FONTX};color:${t.text};letter-spacing:.5px">${esc(p.title || c.name)}</span></div>` +
-      `<div style="position:absolute;left:0;top:42px;right:0;bottom:0">${body}</div>` +
-      `</div></div>`
+      `<div style="position:absolute;left:0;top:0;right:0;height:calc(42px * ${k});display:flex;align-items:center;gap:calc(8px * ${k});padding:0 calc(14px * ${k})">` +
+      `<i style="display:block;width:calc(3px * ${k});height:calc(13px * ${k});background:${t.accent};box-shadow:0 0 6px ${al(t.accent, .8)}"></i>` +
+      `<span class="sf-card-title" style="font-weight:500;font-size:calc(15px * ${k});line-height:1;font-family:${FONTX};color:${t.text};letter-spacing:.5px">${esc(p.title || c.name)}</span></div>` +
+      `<div style="position:absolute;left:0;top:calc(42px * ${k});right:0;bottom:0">${body}</div>` +
+      `</div>`
   }
 
   /** DOM 类组件（数字翻牌 / 排行榜 / 滚动列表 / 标题 / 时钟） */
@@ -296,12 +306,14 @@ export function createScreen(
   }
 
   /**
-   * 摆放节点（位置 / 尺寸 / 旋转）
+   * 摆放节点（位置 / 尺寸 / 旋转），返回铺满模式下的落位（含缩放系数）。
    *
-   * 铺满模式：盒子用百分比铺满屏幕（left/top/width/height 都是 %），
-   * 屏幕多宽多高就撑多宽多高；盒子里的内容由 .sf-fit 等比缩放居中。
+ * 铺满模式：盒子用百分比铺满屏幕（left/top/width/height 都是 %，
+ * 四周在 fit 里让出固定 gap，不贴边）。屏幕多宽多高就撑多宽多高。
+ * 同时把缩放系数写进 CSS 变量 --sf-k，
+ * 供卡片标题栏高度、标题字号、图表字号按比例跟随。
    */
-  function place(el: HTMLElement, r: ComponentItem['rect']): void {
+  function place(el: HTMLElement, r: ComponentItem['rect']): Slot | null {
     if (fill && lay) {
       const s = lay.place(r)
       el.style.left = s.left
@@ -310,13 +322,22 @@ export function createScreen(
       el.style.height = s.height
       el.style.transformOrigin = '0 0'
       el.style.transform = r.rotate ? `rotate(${r.rotate}deg)` : ''
-      return
+      el.style.setProperty('--sf-k', String(Math.round(s.k * 1000) / 1000))
+      return s
     }
     el.style.left = r.x + 'px'
     el.style.top = r.y + 'px'
     el.style.width = r.w + 'px'
     el.style.height = r.h + 'px'
     el.style.transform = r.rotate ? `rotate(${r.rotate}deg)` : ''
+    el.style.removeProperty('--sf-k')
+    return null
+  }
+
+  /** 当前卡片相对设计稿的缩放系数（非铺满模式恒为 1） */
+  function kOf(r: ComponentItem['rect']): number {
+    if (!fill || !lay) return 1
+    return lay.place(r).k
   }
 
   /**
@@ -354,11 +375,12 @@ export function createScreen(
       el.style.position = 'absolute'
       el.style.boxSizing = 'border-box'
       root.appendChild(el)
-      rec = { el, chart: null, type: null, theme: null, pending: false, latest: null, dead: false, serial: 0, visible: true }
+      rec = { el, chart: null, type: null, theme: null, pending: false, latest: null, dead: false, serial: 0, visible: true, comp: null, k: 1 }
       nodes[c.id] = rec
     }
     const node = rec.el
     place(node, c.rect)
+    node.dataset.type = c.type
     node.style.zIndex = String(c.z || 1)
     node.style.display = c.hidden ? 'none' : 'block'
     const wasVisible = rec.visible
@@ -374,6 +396,9 @@ export function createScreen(
     }
 
     if (isChart) {
+      // 图表字号 / 点径跟着卡片大小走（填满卡片后，绝对像素字号在大屏上会偏小）
+      const ks = kOf(c.rect)
+      rec.comp = c
       if (rec.pending) {
         // 图表还在分帧队列中：只刷新出队时要用的最新配置（外壳已在上次调度时渲染）
         scheduleChart(rec, c)
@@ -398,7 +423,8 @@ export function createScreen(
           rec.chart.resize()
         }
         placeInner(node, c.rect)
-        rec.chart.setOption(buildOption(c, t) as never, true)
+        rec.chart.setOption(buildOption(c, t, ks) as never, true)
+        rec.k = ks
       }
     } else {
       // 有面板的物料：外框（背景/边框/四角）铺满盒子，内容放 .sf-fit 里等比缩放
@@ -478,6 +504,22 @@ export function createScreen(
     tick()
   }
 
+  /**
+   * 容器尺寸变化后刷新图表。
+   *
+   * 尺寸变了必须 resize；字号 / 点径是按卡片大小算出来的，
+   * 但拖动窗口时每帧重算 option 会明显卡顿 —— 所以缩放系数变化超过 2% 才重建，
+   * 并且关掉动画（尺寸变化不该重播入场动画）。
+   */
+  function refreshChart(rec: NodeRec, c: ComponentItem): void {
+    if (!rec.chart) return
+    rec.chart.resize()
+    const ks = kOf(c.rect)
+    if (Math.abs(ks - rec.k) < Math.max(0.02, rec.k * 0.02)) return
+    rec.k = ks
+    rec.chart.setOption({ ...buildOption(c, tok(), ks), animation: false } as never, true)
+  }
+
   function updateLayout(next: ScreenSchema): void {
     schema = next
     // 拖拽改位置可能改变内容区范围（百分比基准），先重算再摆放
@@ -489,11 +531,12 @@ export function createScreen(
       placeInner(rec.el, c.rect)
       rec.el.style.zIndex = String(c.z || 1)
       rec.el.style.display = c.hidden ? 'none' : 'block'
-      if (rec.chart) rec.chart.resize()
+      rec.comp = c
+      refreshChart(rec, c)
     })
   }
 
-  /** 容器尺寸变化：重算布局 → 重新落位 → 图表 resize */
+  /** 容器尺寸变化：重算布局 → 重新落位 → 图表 resize（必要时重建 option 刷新字号） */
   function resize(): void {
     computeLayout()
     if (fill) {
@@ -502,7 +545,10 @@ export function createScreen(
         if (!rec) return
         place(rec.el, c.rect)
         placeInner(rec.el, c.rect)
+        rec.comp = c
+        refreshChart(rec, c)
       })
+      return
     }
     Object.keys(nodes).forEach((id) => { nodes[id].chart?.resize() })
   }

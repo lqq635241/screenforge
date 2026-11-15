@@ -47,7 +47,8 @@ export function buildExportHtml(schema: ScreenSchema, themes: Record<string, The
   html,body{margin:0;height:100%;overflow:hidden;background:#000}
   /* 背景层：铺满窗口 */
   #stage{position:fixed;inset:0;overflow:hidden;background-size:cover;background-position:center;background-repeat:no-repeat}
-  /* 内容层：铺满窗口，组件按百分比落位（见 runtime 里的 core/fit） */
+  /* 内容层：铺满窗口，组件按百分比落位（见 runtime 里的 core/fit）
+   * 四周固定留白（EDGE_GAP）由 runtime 的 computeFill 算进百分比里，这里不用 padding */
   #screen{position:absolute;inset:0;overflow:hidden;background:transparent}
 </style>
 </head>

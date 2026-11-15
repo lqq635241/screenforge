@@ -80,11 +80,60 @@ export function fmtNum(n: number, dec = 0): string {
 }
 
 /**
+ * 会随卡片一起缩放的数值键。
+ *
+ * 图表容器是「填满卡片」的，ECharts 里的百分比尺寸（网格、饼图半径、
+ * 雷达半径）本来就会随容器变化；但字号、点大小这些是绝对像素，不缩放的话
+ * 4K 大屏上会小得看不清、小屏上又会挤在一起。所以按卡片缩放系数乘一遍。
+ *
+ * 白名单式处理：只动明确的视觉尺寸，避免误缩放坐标 / 数值（比如 data）。
+ */
+const SCALED_KEYS = new Set([
+  'fontSize',
+  'lineHeight',
+  'symbolSize',
+  'itemWidth',
+  'itemHeight',
+  'itemGap',
+  'barWidth',
+  'barMaxWidth',
+  'borderWidth',
+])
+
+/** 递归缩放 option 里的视觉尺寸（返回新对象，不改入参） */
+export function scaleText<T>(node: T, s: number): T {
+  if (!node || s === 1 || typeof node !== 'object') return node
+  if (Array.isArray(node)) return node.map((v) => scaleText(v, s)) as unknown as T
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(node as Record<string, unknown>)) {
+    if (typeof v === 'number' && SCALED_KEYS.has(k)) {
+      out[k] = Math.round(v * s * 100) / 100
+    } else if (v && typeof v === 'object') {
+      out[k] = scaleText(v, s)
+    } else {
+      out[k] = v
+    }
+  }
+  return out as T
+}
+
+/**
  * 生成一个组件最终的 ECharts option。
  * @param c 组件（含 props / data / rawOption）
  * @param t 当前主题 token（不传则由调用方保证——renderer 内部会传）
+ * @param scale 卡片相对设计稿的缩放系数（字号 / 点径等跟着放大缩小，1 = 原样）
  */
-export function buildOption(c: ComponentItem, t: ThemeToken): Record<string, unknown> {
+export function buildOption(
+  c: ComponentItem,
+  t: ThemeToken,
+  scale = 1,
+): Record<string, unknown> {
+  const o0 = buildRaw(c, t)
+  return scale === 1 ? o0 : scaleText(o0, scale)
+}
+
+/** 不做缩放的原始 option（buildOption 内部实现） */
+function buildRaw(c: ComponentItem, t: ThemeToken): Record<string, unknown> {
   const p = c.props || {}
   const d = (c.data || {}) as Record<string, unknown>
 
