@@ -67,6 +67,8 @@ export function createScreen(
     dead: boolean
     /** 每次调度/取消排队时自增：让「await 地图数据中」的旧任务自动失效，防双初始化 */
     serial: number
+    /** 上一次渲染时的可见状态（仅用于识别「隐藏 → 显示」的尺寸校准时机） */
+    visible: boolean
   }
   const nodes: Record<string, NodeRec> = {}
 
@@ -99,9 +101,11 @@ export function createScreen(
     const c = rec.latest
     const host = rec.el.querySelector('.sf-chart') as HTMLElement | null
     if (!c || !host) return
-    // 隐藏组件（display:none）的宿主尺寸为 0：此刻 init 只会得到一块 0×0 canvas
-    // 并打 "Can't get dom width or height" 警告。这里保持 pending 不变直接返回，
-    // 等组件被显示时由下一次 update → renderComp 的 pending 分支重新入队（见下方 A 处）。
+    // 隐藏组件（display:none）此刻 init 只会得到一块 0×0 canvas，并打
+    // "Can't get dom width or height" 警告。这里保持 pending 直接返回，等组件被
+    // 显示时由下一次 update → renderComp 的 pending 分支重新入队。
+    // 先用 visible 筛掉隐藏组件，避免读取 clientWidth 触发强制同步布局。
+    if (!rec.visible) return
     if (!host.clientWidth || !host.clientHeight) return
     rec.chart = echarts.init(host)
     rec.chart.setOption(buildOption(c, tok()) as never, true)
@@ -277,13 +281,15 @@ export function createScreen(
       el.style.position = 'absolute'
       el.style.boxSizing = 'border-box'
       root.appendChild(el)
-      rec = { el, chart: null, type: null, theme: null, pending: false, latest: null, dead: false, serial: 0 }
+      rec = { el, chart: null, type: null, theme: null, pending: false, latest: null, dead: false, serial: 0, visible: true }
       nodes[c.id] = rec
     }
     const node = rec.el
     place(node, c.rect)
     node.style.zIndex = String(c.z || 1)
     node.style.display = c.hidden ? 'none' : 'block'
+    const wasVisible = rec.visible
+    rec.visible = !c.hidden
 
     const isChart = !!CHART_TYPES[c.type]
     if (rec.type !== c.type || rec.theme !== schema.page.theme) {
@@ -307,11 +313,13 @@ export function createScreen(
       } else {
         const tt = node.querySelector('.sf-card-title')
         if (tt) tt.textContent = (c.props.title as string) || c.name
-        // 尺寸校验：从隐藏切回可见时，外层尺寸变了但没有任何 updateLayout 调用，
-        // canvas 会停在旧尺寸（甚至停在初始化时的 0×0）。这里对齐一次再画。
-        // 命中条件很少，读 clientWidth 与前面的写样式同属一个任务，只触发一次 reflow。
+        // 尺寸校准：只在「隐藏 → 显示」这一次做。
+        // 隐藏期间卡片尺寸仍可在面板里改（Inspector 的 W/H），而 updateLayout 只在
+        // 拖拽/改尺寸时被调用，canvas 会停在隐藏前的尺寸；这里补一次对齐。
+        // 加 wasVisible 判断是为了不污染常规 update —— 避免每次改配置都读布局触发 reflow。
         const host = node.querySelector('.sf-chart') as HTMLElement | null
-        if (host && (rec.chart.getWidth() !== host.clientWidth || rec.chart.getHeight() !== host.clientHeight)) {
+        if (host && !wasVisible && rec.visible &&
+          (rec.chart.getWidth() !== host.clientWidth || rec.chart.getHeight() !== host.clientHeight)) {
           rec.chart.resize()
         }
         rec.chart.setOption(buildOption(c, t) as never, true)
