@@ -37,6 +37,8 @@ export interface EditorCtrl {
   select(id: string | null): void
   /** 触发一次重渲染；mode 决定走全量还是仅布局渲染 */
   bump(mode?: RenderMode): void
+  /** 只重渲染一个组件（改配置项）：React 侧照常刷新，画布只动这一个节点 */
+  patchComp(id: string): void
   renderModeRef: React.MutableRefObject<RenderMode>
   pushHistory(): void
   commit(): void
@@ -66,6 +68,20 @@ export default function App() {
     setVer((v) => v + 1)
   }
 
+  /**
+   * 待局部刷新的组件 id。
+   * 配置项改动只影响自己那一个节点，没必要让 update() 把整屏 O(n) 重铺一遍
+   * （实测：改一个图表标题 → 13 个组件 DOM 全部重建、27 次 childList 变更）。
+   * 用 ref 而不是 state：它只是「这次 bump 走哪条路」的路由标记，
+   * 参与渲染没有意义，而且要在 setVer 之后、effect 之前保持可见。
+   */
+  const dirtyRef = useRef<string | null>(null)
+
+  const patchComp = (id: string) => {
+    dirtyRef.current = id
+    bump('full')
+  }
+
   /* ---- 撤销 / 重做（JSON 快照） ---- */
   const pushHistory = () => {
     const h = historyRef.current
@@ -89,10 +105,16 @@ export default function App() {
   const canUndo = () => historyRef.current.idx > 0
   const canRedo = () => historyRef.current.idx < historyRef.current.stack.length - 1
 
-  /* ---- schema 变化 → 渲染器同步 ---- */
+  /* ---- schema 变化 → 渲染器同步 ----
+   * 三条路：局部（一个组件）→ 仅布局（拖拽）→ 全量（增删 / 换肤 / 撤销）。 */
   useEffect(() => {
     const scene = sceneRef.current
     if (!scene) return
+    if (dirtyRef.current) {
+      scene.patch(dirtyRef.current)
+      dirtyRef.current = null
+      return
+    }
     if (renderModeRef.current === 'layout') scene.updateLayout(schemaRef.current)
     else scene.update(schemaRef.current)
   }, [ver])
@@ -218,7 +240,7 @@ export default function App() {
   const ctrl: EditorCtrl = {
     schemaRef, sceneRef, selId,
     select: setSelId,
-    bump, renderModeRef,
+    bump, patchComp, renderModeRef,
     pushHistory, commit, undo, redo, canUndo, canRedo,
     setTheme, addMaterial, layerAction, toast,
   }

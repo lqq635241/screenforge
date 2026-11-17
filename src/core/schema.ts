@@ -97,6 +97,13 @@ export interface ScreenHandle {
   update(schema: ScreenSchema): void
   /** 轻量更新：只变 rect / z / hidden 时调用（拖拽中高频触发） */
   updateLayout(schema: ScreenSchema): void
+  /**
+   * 局部更新：只重渲染一个组件（改配置项时用）。
+   * update() 是无条件 O(n) 全量重铺 —— 改一个图表的标题会让另外 12 个组件的
+   * DOM 一起重建（实测：1 次输入 → 13 个组件被改、27 次 childList 变更）。
+   * 契约：不改几何。rect / z / hidden 变了请走 updateLayout / update。
+   */
+  patch(id: string): void
   /** 容器尺寸变化后重算图表 */
   resize(): void
   dispose(): void

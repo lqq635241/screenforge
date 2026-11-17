@@ -199,7 +199,9 @@ function buildRaw(c: ComponentItem, t: ThemeToken): Record<string, unknown> {
       xAxis: { type: 'category', boundaryGap: false, data: d.categories || [], axisLine: { lineStyle: { color: t.panelBorder } }, axisTick: { show: false }, axisLabel },
       yAxis: { type: 'value', axisLine: { show: false }, axisLabel, splitLine, name: unit || undefined, nameTextStyle: { color: t.sub } },
       series: (d.series as { name: string; values: number[] }[] || []).map((s) => ({
-        name: s.name, type: 'line', smooth: !!p.smooth, showSymbol: false, symbolSize: 5,
+        // showLabel 打开时必须让 symbol 出现：ECharts 折线的 label 挂在 symbol
+        // 元素上，showSymbol:false 时没有宿主，label 配了也不会渲染。
+        name: s.name, type: 'line', smooth: !!p.smooth, showSymbol: !!p.showLabel, symbolSize: 5,
         data: s.values, lineStyle: { width: 2.5 },
         areaStyle: p.area ? { opacity: 0.14 } : null,
         label: p.showLabel ? { show: true, position: 'top', color: t.sub, fontSize: 11 } : undefined,

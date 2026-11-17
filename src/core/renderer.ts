@@ -520,6 +520,15 @@ export function createScreen(
     rec.chart.setOption({ ...buildOption(c, tok(), ks), animation: false } as never, true)
   }
 
+  /**
+   * 局部更新：只重渲染一个组件（配置面板改字段时用）。
+   * 不改几何 → 不重算布局；命中 nodes[id] 复用 DOM 外壳与 echarts 实例。
+   */
+  function patch(id: string): void {
+    const c = (schema.components || []).find((x) => x.id === id)
+    if (c) renderComp(c)
+  }
+
   function updateLayout(next: ScreenSchema): void {
     schema = next
     // 拖拽改位置可能改变内容区范围（百分比基准），先重算再摆放
@@ -575,5 +584,5 @@ export function createScreen(
   }
   update(schema)
 
-  return { update, updateLayout, resize, dispose, buildOption: (c, t) => buildOption(c, t || tok()) }
+  return { update, updateLayout, patch, resize, dispose, buildOption: (c, t) => buildOption(c, t || tok()) }
 }

@@ -5,11 +5,49 @@
  * 表单由物料的 FIELDS 声明驱动，不针对单种物料写死面板。
  */
 
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { FIELDS, DATA_TYPES, getMaterial } from '../../core/materials'
 import { THEMES, deriveCustomTheme, type ThemeToken } from '../../core/themes'
 import type { ComponentItem } from '../../core/schema'
 import type { EditorCtrl } from '../App'
+
+/** 文本 / 数字输入框（非受控）
+ *  为什么要非受控：受控写法必须在每个按键后 setState 才会显示新字符，而一旦
+ *  触发重渲染就会连带刷新画布 —— 实测输入 6 个字符产生 49 次强制重排。
+ *  这里打字期间只把值写进 schema（不渲染），失焦或回车才提交一次绘制。
+ *  外部状态变化（撤销重做 / 切换选中组件）靠 effect 手动同步回 DOM，
+ *  否则非受控框会停在上一个组件的值上。 */
+function LiveInput({ value, onDraft, onCommit, label, type, min, max }: {
+  value: string
+  /** 每次按键：只更新数据，不触发渲染 */
+  onDraft(next: string): void
+  /** 失焦 / 回车：提交这一次编辑（画布刷新 + 入历史） */
+  onCommit(): void
+  label: string
+  type?: string
+  min?: number
+  max?: number
+}) {
+  const ref = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (ref.current && ref.current.value !== value) ref.current.value = value
+  }, [value])
+  return (
+    <input
+      ref={ref}
+      className="in"
+      type={type}
+      min={min}
+      max={max}
+      aria-label={label}
+      defaultValue={value}
+      spellCheck={false}
+      onChange={(e) => onDraft(e.target.value)}
+      onBlur={onCommit}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+    />
+  )
+}
 
 /** 单个字段行（text / number / switch / select）
  *  取值回落到物料默认 props：旧 schema 里没有新字段时，
@@ -17,6 +55,8 @@ import type { EditorCtrl } from '../App'
 function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string; t: string; min?: number; max?: number; opts?: [string, string][] }; ctrl: EditorCtrl }) {
   const def = getMaterial(c.type)?.props?.[f.k]
   const v = c.props[f.k] !== undefined ? c.props[f.k] : def
+  /** 提交一次字段编辑：刷新这一个组件 + 入历史（不做整屏 O(n) 重铺） */
+  const commit = () => { ctrl.patchComp(c.id); ctrl.pushHistory() }
   if (f.t === 'switch') {
     return (
       <div className="sw-line">
@@ -27,7 +67,7 @@ function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string;
           role="switch"
           aria-checked={!!v}
           aria-label={f.l}
-          onClick={() => { c.props[f.k] = !v; ctrl.bump('full'); ctrl.pushHistory() }}
+          onClick={() => { c.props[f.k] = !v; commit() }}
         />
       </div>
     )
@@ -36,7 +76,7 @@ function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string;
     return (
       <div className="row">
         <span className="lb">{f.l}</span>
-        <select className="in" aria-label={f.l} value={String(v ?? '')} onChange={(e) => { c.props[f.k] = e.target.value; ctrl.commit() }}>
+        <select className="in" aria-label={f.l} value={String(v ?? '')} onChange={(e) => { c.props[f.k] = e.target.value; commit() }}>
           {f.opts!.map(([val, label]) => <option key={val} value={val}>{label}</option>)}
         </select>
       </div>
@@ -46,18 +86,22 @@ function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string;
     return (
       <div className="row">
         <span className="lb">{f.l}</span>
-        <input className="in" type="number" aria-label={f.l} min={f.min} max={f.max} value={String(v ?? '')}
-          onChange={(e) => { c.props[f.k] = Number(e.target.value); ctrl.bump('full') }}
-          onBlur={() => ctrl.pushHistory()} />
+        <LiveInput type="number" min={f.min} max={f.max} label={f.l} value={String(v ?? '')}
+          onDraft={(s) => {
+            // 中间态（"" / "-" / "1."）先不写进 schema，避免 NaN 传到 option 里
+            if (s === '') c.props[f.k] = 0
+            else if (Number.isFinite(Number(s))) c.props[f.k] = Number(s)
+          }}
+          onCommit={commit} />
       </div>
     )
   }
   return (
     <div className="row">
       <span className="lb">{f.l}</span>
-      <input className="in" aria-label={f.l} value={String(v ?? '')}
-        onChange={(e) => { c.props[f.k] = e.target.value; ctrl.bump('full') }}
-        onBlur={() => ctrl.pushHistory()} />
+      <LiveInput label={f.l} value={String(v ?? '')}
+        onDraft={(s) => { c.props[f.k] = s }}
+        onCommit={commit} />
     </div>
   )
 }
@@ -76,8 +120,8 @@ function DataBlock({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
   const mode = c.dataMode || 'static'
   const seg = (
     <div className="seg" role="group" aria-label="数据来源方式">
-      <button type="button" aria-pressed={mode === 'static'} className={mode === 'static' ? 'on' : ''} onClick={() => { c.dataMode = 'static'; ctrl.bump('full') }}>写死数据</button>
-      <button type="button" aria-pressed={mode === 'http'} className={mode === 'http' ? 'on' : ''} onClick={() => { c.dataMode = 'http'; ctrl.bump('full') }}>接口数据</button>
+      <button type="button" aria-pressed={mode === 'static'} className={mode === 'static' ? 'on' : ''} onClick={() => { c.dataMode = 'static'; ctrl.patchComp(c.id) }}>写死数据</button>
+      <button type="button" aria-pressed={mode === 'http'} className={mode === 'http' ? 'on' : ''} onClick={() => { c.dataMode = 'http'; ctrl.patchComp(c.id) }}>接口数据</button>
     </div>
   )
   let body: JSX.Element
@@ -89,11 +133,12 @@ function DataBlock({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
           <button className="mini" onClick={() => {
             try {
               c.data = JSON.parse(taRef.current?.value || '{}')
-              ctrl.commit()
+              ctrl.patchComp(c.id)
+              ctrl.pushHistory()
               ctrl.toast('数据已应用')
             } catch (err) { ctrl.toast('JSON 格式有误：' + (err as Error).message) }
           }}>应用数据</button>
-          <button className="mini" onClick={() => { randomData(c); ctrl.commit(); ctrl.toast('已生成随机数据') }}>随机一批</button>
+          <button className="mini" onClick={() => { randomData(c); ctrl.patchComp(c.id); ctrl.pushHistory(); ctrl.toast('已生成随机数据') }}>随机一批</button>
         </div>
       </>
     )
@@ -269,7 +314,7 @@ function CompPanel({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
       <div className="grp">
         <div className="grp-t">基础</div>
         <div className="row"><span className="lb">名称</span>
-          <input className="in" aria-label="组件名称" defaultValue={c.name} onChange={(e) => { c.name = e.target.value; ctrl.bump('full') }} onBlur={() => ctrl.pushHistory()} /></div>
+          <input className="in" aria-label="组件名称" defaultValue={c.name} onChange={(e) => { c.name = e.target.value; ctrl.patchComp(c.id) }} onBlur={() => ctrl.pushHistory()} /></div>
         <div className="quad">
           {(['x', 'y', 'w', 'h'] as const).map((k) => (
             <div className="row" key={k}><span className="lb">{k.toUpperCase()}</span>
@@ -299,11 +344,12 @@ function CompPanel({ c, ctrl }: { c: ComponentItem; ctrl: EditorCtrl }) {
             try {
               const txt = (taRef.current?.value || '').trim()
               c.rawOption = txt ? JSON.parse(txt) : null
-              ctrl.commit()
+              ctrl.patchComp(c.id)
+              ctrl.pushHistory()
               ctrl.toast('option 片段已合并')
             } catch (err) { ctrl.toast('JSON 格式有误：' + (err as Error).message) }
           }}>应用 option 片段</button>
-          <button className="mini" onClick={() => { c.rawOption = null; ctrl.commit() }}>清空</button>
+          <button className="mini" onClick={() => { c.rawOption = null; ctrl.patchComp(c.id); ctrl.pushHistory() }}>清空</button>
         </div>
         <div className="hint" style={{ marginTop: 8 }}>深度 merge 到生成结果之上，兜住配置项不够的情况。</div>
       </div>
