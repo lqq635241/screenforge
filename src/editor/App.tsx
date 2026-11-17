@@ -18,6 +18,7 @@ import { ALL_MATERIALS } from '../core/materials'
 import type { ComponentItem, ScreenSchema } from '../core/schema'
 import { clone, findComp, uid } from './utils/misc'
 import { saltConfetti } from './utils/confetti'
+import { exportSchemaJson } from '../export/exportJson'
 import Topbar from './components/Topbar'
 import Palette from './components/Palette'
 import CanvasStage from './components/CanvasStage'
@@ -208,6 +209,12 @@ export default function App() {
     toast(`已导出 screen-${kind}.zip · 解压后 npm install && npm run dev`)
   }
 
+  /** 导出 schema JSON：纯数据快照（不补默认值、不合并 option） */
+  const doExportJson = () => {
+    const info = exportSchemaJson(schemaRef.current)
+    toast(`已导出 ${info.name} · ${info.components} 个组件 · ${(info.bytes / 1024).toFixed(1)} KB`)
+  }
+
   const ctrl: EditorCtrl = {
     schemaRef, sceneRef, selId,
     select: setSelId,
@@ -220,7 +227,7 @@ export default function App() {
     <>
       {/* 文档主标题：视觉上省略（顶栏已有品牌区），但给屏幕阅读器与搜索引擎一个明确的一级标题 */}
       <h1 className="sr-only">ScreenForge 可视化大屏搭建器</h1>
-      <Topbar ctrl={ctrl} onPreview={() => setPreviewOpen(true)} onExportHtml={doExportHtml} onExportProject={doExportProject} />
+      <Topbar ctrl={ctrl} onPreview={() => setPreviewOpen(true)} onExportHtml={doExportHtml} onExportProject={doExportProject} onExportJson={doExportJson} />
       <main>
         <Palette ctrl={ctrl} />
         <CanvasStage ctrl={ctrl} />

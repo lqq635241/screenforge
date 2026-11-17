@@ -12,20 +12,9 @@
 import type { ScreenSchema } from '../core/schema'
 import type { ThemeToken } from '../core/themes'
 import { pageBackground } from '../core/fit'
+import { downloadBlob } from './download'
 // 构建产物以纯文本引入（?raw），随编辑器一起打包，导出时直接内联
 import runtimeSrc from './runtime.iife.js?raw'
-
-/** 触发浏览器下载 Blob */
-function downloadBlob(name: string, blob: Blob): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = name
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1500)
-}
 
 /** 生成单文件 HTML 字符串 */
 export function buildExportHtml(schema: ScreenSchema, themes: Record<string, ThemeToken>): string {

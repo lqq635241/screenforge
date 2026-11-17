@@ -10,9 +10,10 @@ interface Props {
   onPreview(): void
   onExportHtml(): void
   onExportProject(kind: 'vue' | 'react'): void
+  onExportJson(): void
 }
 
-export default function Topbar({ ctrl, onPreview, onExportHtml, onExportProject }: Props) {
+export default function Topbar({ ctrl, onPreview, onExportHtml, onExportProject, onExportJson }: Props) {
   const schema = ctrl.schemaRef.current
   const cur = schema.page.theme
 
@@ -48,6 +49,7 @@ export default function Topbar({ ctrl, onPreview, onExportHtml, onExportProject 
         })}
       </div>
       <button className="tb-btn" onClick={onPreview}>预览</button>
+      <button className="tb-btn" id="btnExportJson" title="导出当前大屏的 schema 结构（JSON），可用于备份、迁移或查看数据结构" onClick={onExportJson}>导出 JSON</button>
       <button className="tb-btn primary" onClick={onExportHtml}>导出 HTML</button>
       <button className="tb-btn" onClick={() => onExportProject('vue')}>导出 Vue 工程</button>
       <button className="tb-btn" onClick={() => onExportProject('react')}>导出 React 工程</button>
