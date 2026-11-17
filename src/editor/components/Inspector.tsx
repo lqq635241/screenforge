@@ -11,9 +11,12 @@ import { THEMES, deriveCustomTheme, type ThemeToken } from '../../core/themes'
 import type { ComponentItem } from '../../core/schema'
 import type { EditorCtrl } from '../App'
 
-/** 单个字段行（text / number / switch / select） */
+/** 单个字段行（text / number / switch / select）
+ *  取值回落到物料默认 props：旧 schema 里没有新字段时，
+ *  面板要显示「实际生效的默认值」，否则会出现「开关是关的、提示框却是开的」这种错觉。 */
 function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string; t: string; min?: number; max?: number; opts?: [string, string][] }; ctrl: EditorCtrl }) {
-  const v = c.props[f.k]
+  const def = getMaterial(c.type)?.props?.[f.k]
+  const v = c.props[f.k] !== undefined ? c.props[f.k] : def
   if (f.t === 'switch') {
     return (
       <div className="sw-line">
@@ -24,7 +27,7 @@ function FieldRow({ c, f, ctrl }: { c: ComponentItem; f: { k: string; l: string;
           role="switch"
           aria-checked={!!v}
           aria-label={f.l}
-          onClick={() => { c.props[f.k] = !c.props[f.k]; ctrl.bump('full'); ctrl.pushHistory() }}
+          onClick={() => { c.props[f.k] = !v; ctrl.bump('full'); ctrl.pushHistory() }}
         />
       </div>
     )

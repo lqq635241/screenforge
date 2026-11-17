@@ -31,27 +31,27 @@ export interface MaterialDef {
 export const MATERIALS: MaterialDef[] = [
   {
     type: 'echarts.line', name: '折线图', cat: '图表', w: 620, h: 300,
-    props: { title: '折线图', smooth: true, area: true, showLegend: true },
+    props: { title: '折线图', smooth: true, area: true, showLegend: true, showTooltip: true, unitSuffix: '', legendPos: '', showDataZoom: false, showLabel: false },
     data: { categories: ['一月', '二月', '三月', '四月', '五月'], series: [{ name: '系列1', values: [120, 200, 150, 260, 180] }] },
   },
   {
     type: 'echarts.bar', name: '柱状图', cat: '图表', w: 620, h: 300,
-    props: { title: '柱状图', showLegend: true, barWidth: 16 },
+    props: { title: '柱状图', showLegend: true, barWidth: 16, stack: false, showTooltip: true, unitSuffix: '', legendPos: '', showDataZoom: false, showLabel: false },
     data: { categories: ['A', 'B', 'C', 'D', 'E'], series: [{ name: '系列1', values: [120, 200, 150, 260, 180] }] },
   },
   {
     type: 'echarts.pie', name: '饼图', cat: '图表', w: 420, h: 300,
-    props: { title: '饼图', donut: true, showLegend: true },
+    props: { title: '饼图', donut: true, showLegend: true, showTooltip: true, radiusOut: 70, labelPos: '', roseType: '' },
     data: { items: [{ name: 'A', value: 40 }, { name: 'B', value: 28 }, { name: 'C', value: 20 }, { name: 'D', value: 12 }] },
   },
   {
     type: 'echarts.gauge', name: '仪表盘', cat: '图表', w: 380, h: 300,
-    props: { title: '仪表盘', label: '当前值', max: 100, unit: '%' },
+    props: { title: '仪表盘', label: '当前值', gaugeMin: 0, max: 100, unitSuffix: '%', progressMode: true, pointerStyle: '' },
     data: { value: 72 },
   },
   {
     type: 'echarts.map', name: '中国地图', cat: '图表', w: 640, h: 460,
-    props: { title: '全国区域分布' },
+    props: { title: '全国区域分布', showTooltip: true, roam: false },
     data: {
       items: [
         { name: '广东', value: 820 }, { name: '北京', value: 640 }, { name: '浙江', value: 520 },
@@ -62,7 +62,7 @@ export const MATERIALS: MaterialDef[] = [
   },
   {
     type: 'echarts.radar', name: '雷达图', cat: '图表', w: 480, h: 380,
-    props: { title: '能力雷达', showLegend: true },
+    props: { title: '能力雷达', showLegend: true, filled: true, shape: 'polygon' },
     data: {
       indicators: [
         { name: '销售', max: 100 }, { name: '管理', max: 100 }, { name: '信息', max: 100 },
@@ -121,24 +121,42 @@ export const FIELDS: Record<string, FieldDef[]> = {
   'echarts.line': [
     { k: 'title', l: '标题', t: 'text' }, { k: 'smooth', l: '平滑曲线', t: 'switch' },
     { k: 'area', l: '面积填充', t: 'switch' }, { k: 'showLegend', l: '显示图例', t: 'switch' },
+    { k: 'legendPos', l: '图例位置', t: 'select', opts: [['', '默认（右上）'], ['top', '顶部'], ['bottom', '底部'], ['left', '左侧'], ['right', '右侧']] },
+    { k: 'showTooltip', l: '显示提示框', t: 'switch' }, { k: 'unitSuffix', l: '数值单位', t: 'text' },
+    { k: 'showLabel', l: '显示数值标签', t: 'switch' }, { k: 'showDataZoom', l: '数据缩放条', t: 'switch' },
   ],
   'echarts.bar': [
     { k: 'title', l: '标题', t: 'text' }, { k: 'barWidth', l: '柱宽', t: 'number', min: 4, max: 60 },
     { k: 'stack', l: '堆叠显示', t: 'switch' }, { k: 'showLegend', l: '显示图例', t: 'switch' },
+    { k: 'legendPos', l: '图例位置', t: 'select', opts: [['', '默认（右上）'], ['top', '顶部'], ['bottom', '底部'], ['left', '左侧'], ['right', '右侧']] },
+    { k: 'showTooltip', l: '显示提示框', t: 'switch' }, { k: 'unitSuffix', l: '数值单位', t: 'text' },
+    { k: 'showLabel', l: '显示数值标签', t: 'switch' }, { k: 'showDataZoom', l: '数据缩放条', t: 'switch' },
   ],
   'echarts.pie': [
     { k: 'title', l: '标题', t: 'text' }, { k: 'donut', l: '环形', t: 'switch' },
-    { k: 'showLegend', l: '显示图例', t: 'switch' },
+    { k: 'radiusOut', l: '外径 %', t: 'number', min: 20, max: 95 },
+    { k: 'labelPos', l: '标签位置', t: 'select', opts: [['', '默认（外侧）'], ['inside', '圆内'], ['none', '隐藏']] },
+    { k: 'roseType', l: '玫瑰模式', t: 'select', opts: [['', '关'], ['radius', '半径模式'], ['area', '面积模式']] },
+    { k: 'showLegend', l: '显示图例', t: 'switch' }, { k: 'showTooltip', l: '显示提示框', t: 'switch' },
   ],
   'echarts.gauge': [
     { k: 'title', l: '标题', t: 'text' }, { k: 'label', l: '指标名', t: 'text' },
-    { k: 'max', l: '最大值', t: 'number' }, { k: 'unit', l: '单位', t: 'text' },
+    { k: 'gaugeMin', l: '最小值', t: 'number' }, { k: 'max', l: '最大值', t: 'number' },
+    { k: 'progressMode', l: '进度环模式', t: 'switch' },
+    { k: 'pointerStyle', l: '指针', t: 'select', opts: [['', '默认（隐藏）'], ['show', '显示指针']] },
+    { k: 'unitSuffix', l: '单位', t: 'text' },
   ],
   'echarts.map': [
     { k: 'title', l: '标题', t: 'text' }, { k: 'showLegend', l: '显示数值色阶', t: 'switch' },
+    { k: 'showTooltip', l: '显示提示框', t: 'switch' },
+    { k: 'roam', l: '允许缩放拖动', t: 'switch' },
   ],
   'echarts.radar': [
     { k: 'title', l: '标题', t: 'text' }, { k: 'showLegend', l: '显示图例', t: 'switch' },
+    { k: 'legendPos', l: '图例位置', t: 'select', opts: [['', '默认（右上）'], ['top', '顶部'], ['bottom', '底部'], ['left', '左侧'], ['right', '右侧']] },
+    { k: 'filled', l: '填充区域', t: 'switch' },
+    { k: 'shape', l: '形状', t: 'select', opts: [['polygon', '多边形'], ['circle', '圆形']] },
+    { k: 'showTooltip', l: '显示提示框', t: 'switch' },
   ],
   'deco.number': [
     { k: 'label', l: '指标名', t: 'text' }, { k: 'value', l: '数值', t: 'number' },

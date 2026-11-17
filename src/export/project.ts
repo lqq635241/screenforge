@@ -982,14 +982,14 @@ import {
 } from 'echarts/charts'
 import {
   GridComponent, TooltipComponent, LegendComponent,
-  VisualMapComponent, AxisPointerComponent,
+  VisualMapComponent, AxisPointerComponent, DataZoomComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
 echarts.use([
   LineChart, BarChart, PieChart, GaugeChart, MapChart, RadarChart,
   GridComponent, TooltipComponent, LegendComponent, VisualMapComponent,
-  AxisPointerComponent, CanvasRenderer,
+  AxisPointerComponent, DataZoomComponent, CanvasRenderer,
 ])
 
 export default echarts

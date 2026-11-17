@@ -25,20 +25,23 @@ import {
 } from 'echarts/charts'
 import {
   GridComponent, TooltipComponent, LegendComponent,
-  VisualMapComponent, AxisPointerComponent,
+  VisualMapComponent, AxisPointerComponent, DataZoomComponent,
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
 
 /* 本项目物料用到的能力全景：
  * - 图表：line / bar / pie / gauge / map / radar（见 materials.ts）
  * - 组件：grid(直角坐标系) / tooltip / legend / visualMap(地图色阶) /
- *         axisPointer(tooltip 的指示线)
+ *         axisPointer(tooltip 的指示线) / dataZoom(折线柱状的数据缩放条)
  * - 渲染器：Canvas（大屏多图表场景下 canvas 比 svg 更稳）
+ *
+ * 注意 dataZoom：不注册的话 option 里的 dataZoom 会被静默忽略 ——
+ * 没有任何报错，图表照常渲染，只是缩放条不出现，很难排查。
  */
 echarts.use([
   LineChart, BarChart, PieChart, GaugeChart, MapChart, RadarChart,
   GridComponent, TooltipComponent, LegendComponent, VisualMapComponent,
-  AxisPointerComponent, CanvasRenderer,
+  AxisPointerComponent, DataZoomComponent, CanvasRenderer,
 ])
 
 /** 命名空间整体再导出：调用方写法与全量引入完全一致（echarts.init / registerMap ...） */
