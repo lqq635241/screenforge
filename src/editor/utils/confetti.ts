@@ -27,7 +27,7 @@ export function saltConfetti(colors: string[]): void {
   ctx.scale(dpr, dpr)
 
   /* 盐粒：小、慢、窄带飘落 */
-  const grains = Array.from({ length: 70 }, (_, i) => ({
+  const grains = Array.from({ length: 0 }, (_, i) => ({
     x: W * 0.3 + Math.random() * W * 0.4,          // 上部中间窄带
     y: -10 - Math.random() * H * 0.3,
     vx: (Math.random() - 0.5) * 0.9,               // 横向漂移很轻

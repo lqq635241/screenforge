@@ -7,3 +7,4 @@ src/export/runtime.iife.js
 
 # 本地验证产物（截图 / 导出包 / 生成工程）
 .shots
+.serena
